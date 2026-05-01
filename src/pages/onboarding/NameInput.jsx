@@ -1,56 +1,40 @@
-import React, { useState } from "react";
+import { useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { motion } from "framer-motion";
-import { Input } from "../../components/ui/input";
-import { Button } from "../../components/ui/button";
-import { ArrowRight } from "lucide-react";
 
 export default function NameInput() {
   const [name, setName] = useState("");
   const navigate = useNavigate();
 
-  const handleContinue = () => {
-    if (!name.trim()) return;
-    localStorage.setItem("fb_name", name.trim());
+  const handleNext = () => {
+    if (!name) return alert("Enter your name");
+    localStorage.setItem("user_name", name);
     navigate("/onboarding/dob");
   };
 
   return (
-    <div className="min-h-screen bg-background flex items-center justify-center p-6">
-      <motion.div
-        initial={{ opacity: 0, y: 20 }}
-        animate={{ opacity: 1, y: 0 }}
-        transition={{ duration: 0.5 }}
-        className="w-full max-w-md"
-      >
-        <div className="bg-card rounded-2xl border border-border shadow-sm p-8">
-          <div className="text-center mb-8">
-            <div className="text-4xl mb-3">👤</div>
-            <h1 className="text-2xl font-bold text-foreground">What's your name?</h1>
-            <p className="text-muted-foreground mt-1 text-sm">This will be shown on your profile</p>
-          </div>
+    <div className="h-screen flex items-center justify-center bg-gray-100">
 
-          <div className="space-y-5">
-            <Input
-              placeholder="Enter your full name"
-              value={name}
-              onChange={(e) => setName(e.target.value)}
-              onKeyDown={(e) => e.key === "Enter" && handleContinue()}
-              className="h-12 text-base rounded-xl"
-              autoFocus
-            />
+      <div className="bg-white p-8 rounded-xl shadow-lg w-[350px] text-center">
 
-            <Button
-              onClick={handleContinue}
-              disabled={!name.trim()}
-              className="w-full h-12 rounded-xl text-base font-medium gap-2"
-            >
-              Continue
-              <ArrowRight className="w-4 h-4" />
-            </Button>
-          </div>
-        </div>
-      </motion.div>
+        <h2 className="text-xl font-semibold mb-2">Step 1 of 2</h2>
+        <p className="text-gray-500 mb-4">What’s your name?</p>
+
+        <input
+          value={name}
+          onChange={(e) => setName(e.target.value)}
+          placeholder="Enter your name"
+          className="w-full border p-3 rounded mb-5"
+        />
+
+        <button
+          onClick={handleNext}
+          className="w-full bg-blue-600 text-white py-2 rounded hover:bg-blue-700"
+        >
+          Continue →
+        </button>
+
+      </div>
+
     </div>
   );
 }

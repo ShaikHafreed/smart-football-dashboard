@@ -12,17 +12,17 @@ let latestData = {
 };
 
 // ESP32 sends data here
-app.post("/sensor", (req, res) => {
+app.post("/data", (req, res) => {
   latestData = req.body;
   console.log("📡 Data received:", latestData);
-  res.json({ status: "ok" });
+  res.send("OK");
 });
 
-// React fetches data from here
-app.get("/sensor", (req, res) => {
+// React fetches data here
+app.get("/data", (req, res) => {
   res.json(latestData);
 });
 
-app.listen(5000, () => {
-  console.log("🚀 Server running on port 5000");
+app.listen(5000, "0.0.0.0", () => {
+  console.log("🚀 Server running on http://0.0.0.0:5000");
 });

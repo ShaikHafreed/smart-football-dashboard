@@ -5,7 +5,6 @@ export default function Profile() {
   const navigate = useNavigate();
 
   const storedUser = JSON.parse(localStorage.getItem("fb_user"));
-
   const [user, setUser] = useState(storedUser || {});
   const [editMode, setEditMode] = useState(false);
 
@@ -20,7 +19,6 @@ export default function Profile() {
     setUser({ ...user, [e.target.name]: e.target.value });
   };
 
-  // 🖼️ IMAGE UPLOAD
   const handleImageUpload = (e) => {
     const file = e.target.files[0];
     if (!file) return;
@@ -38,9 +36,10 @@ export default function Profile() {
     alert("Profile updated ✅");
   };
 
+  /* 🔥 FIXED LOGOUT */
   const handleLogout = () => {
-    localStorage.removeItem("fb_user");
-    navigate("/login");
+    localStorage.clear();
+    navigate("/", { replace: true });
   };
 
   if (!user) return <p className="p-6">No user data</p>;
@@ -50,7 +49,7 @@ export default function Profile() {
 
       <h1 className="text-3xl font-bold">Profile 👤</h1>
 
-      {/* AVATAR */}
+      {/* Avatar */}
       <div className="flex flex-col items-center space-y-3">
         <img
           src={user.avatar || "https://via.placeholder.com/100"}
@@ -63,10 +62,10 @@ export default function Profile() {
         )}
       </div>
 
-      {/* PROFILE CARD */}
+      {/* Profile Card */}
       <div className="bg-white p-6 rounded-xl shadow space-y-4">
 
-        {/* NAME */}
+        {/* Name */}
         <div>
           <p className="text-sm text-gray-500">Name</p>
           {editMode ? (
@@ -81,7 +80,7 @@ export default function Profile() {
           )}
         </div>
 
-        {/* EMAIL */}
+        {/* Email */}
         <div>
           <p className="text-sm text-gray-500">Email</p>
           {editMode ? (
@@ -112,13 +111,13 @@ export default function Profile() {
           )}
         </div>
 
-        {/* AGE */}
+        {/* Age */}
         <div>
           <p className="text-sm text-gray-500">Age</p>
           <p className="font-semibold">{calculateAge(user.dob)} years</p>
         </div>
 
-        {/* ACTION BUTTONS */}
+        {/* Buttons */}
         <div className="flex gap-3 mt-4">
 
           {editMode ? (
@@ -150,7 +149,7 @@ export default function Profile() {
 
       </div>
 
-      {/* LOGOUT */}
+      {/* Logout */}
       <button
         onClick={handleLogout}
         className="w-full py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 transition"
