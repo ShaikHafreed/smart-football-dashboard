@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useEffect, useState } from "react";
 import FootballField from "../components/FootballField";
 import {
   LineChart,
@@ -7,127 +7,156 @@ import {
   YAxis,
   Tooltip,
   ResponsiveContainer,
+  CartesianGrid,
 } from "recharts";
 
 export default function Dashboard() {
-  const [data, setData] = useState([]);
-  const [kick, setKick] = useState(false);
-  const [stats, setStats] = useState({
-    maxSpin: 0,
-    avgSpin: 0,
-    bestShot: 0,
+  const SERVER = "http://127.0.0.1:5000";
+
+  const [mode, setMode] = useState("none");
+
+  const [data, setData] = useState({
+    speed: 0,
+    spin: 0,
+    force: 0,
+    distance: 0,
+    shot: "none",
+    connected: false,
   });
 
-  const SERVER_URL = "http://192.168.29.254:5000/data";
+  const [history, setHistory] = useState([]);
 
+  // 🔄 FETCH LOOP
   useEffect(() => {
+    if (mode === "none") return;
+
     const interval = setInterval(async () => {
       try {
-        const res = await fetch(SERVER_URL);
+        const res = await fetch(`${SERVER}/data`);
         const json = await res.json();
 
-        const spin = json.spin || 0;
+        setData(json);
 
-        // 🔥 KICK DETECTION
-        if (spin > 1500) {
-          setKick(true);
-          setTimeout(() => setKick(false), 600);
+        // ONLY UPDATE GRAPH WHEN CONNECTED
+        if (json.connected) {
+          setHistory((prev) => [
+            ...prev.slice(-30),
+            {
+              time: new Date().toLocaleTimeString(),
+              speed: json.speed,
+              spin: json.spin,
+            },
+          ]);
         }
-
-        setData((prev) => {
-          const newData = [
-            ...prev,
-            { time: Date.now(), spin },
-          ].slice(-20);
-
-          const spins = newData.map((d) => d.spin);
-          const maxSpin = Math.max(...spins);
-          const avgSpin =
-            spins.reduce((a, b) => a + b, 0) / spins.length;
-
-          setStats((prevStats) => ({
-            maxSpin,
-            avgSpin: avgSpin.toFixed(0),
-            bestShot:
-              spin > prevStats.bestShot
-                ? spin
-                : prevStats.bestShot,
-          }));
-
-          return newData;
-        });
       } catch (err) {
-        console.log("Server error");
+        console.log("Backend not reachable");
       }
     }, 1000);
 
     return () => clearInterval(interval);
-  }, []);
+  }, [mode]);
 
-  const latest = data[data.length - 1] || {};
+  // 🔘 API CALL
+  const apiPost = async (url, body = {}) => {
+    await fetch(url, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body),
+    });
+  };
 
   return (
-    <div className="space-y-6">
+    <div className="p-6 space-y-6">
 
-      <h1 className="text-3xl font-bold flex items-center gap-2">
-        Live Motion ⚽
-        {kick && (
-          <span className="bg-red-500 text-white px-3 py-1 rounded-full animate-bounce">
-            🔥 KICK!
-          </span>
-        )}
-      </h1>
+      {/* FIELD */}
+      <FootballField speed={data.speed} />
 
-      {/* 🔥 CARDS */}
-      <div className="grid grid-cols-3 gap-4">
-        <Card title="Current Spin" value={latest.spin} highlight={kick} />
-        <Card title="Max Spin" value={stats.maxSpin} />
-        <Card title="Avg Spin" value={stats.avgSpin} />
+      {/* HEADER */}
+      <div className="flex justify-between items-center">
+        <h1 className="text-3xl font-bold">⚽ Smart Dashboard</h1>
+
+        <span className={`px-3 py-1 rounded-full text-sm ${
+          data.connected
+            ? "bg-green-100 text-green-600"
+            : "bg-red-100 text-red-600"
+        }`}>
+          {data.connected ? "Hardware Connected" : "No Hardware"}
+        </span>
       </div>
 
-      {/* 🔥 BEST SHOT */}
-      <div className="bg-green-100 p-4 rounded-xl shadow">
-        <h3 className="font-bold text-lg">🔥 Best Shot</h3>
-        <p className="text-xl">{stats.bestShot}</p>
+      {/* 🔘 BUTTONS */}
+      <div className="flex gap-3">
+        <button
+          onClick={async () => {
+            setMode("wifi");
+            await apiPost(`${SERVER}/mode`, { mode: "wifi" });
+          }}
+          className="bg-green-500 text-white px-4 py-2 rounded-lg shadow"
+        >
+          📶 WiFi
+        </button>
+
+        <button
+          onClick={async () => {
+            setMode("bluetooth");
+            await apiPost(`${SERVER}/mode`, { mode: "bluetooth" });
+          }}
+          className="bg-blue-500 text-white px-4 py-2 rounded-lg shadow"
+        >
+          🔵 Bluetooth
+        </button>
+
+        <button
+          onClick={async () => {
+            setMode("none");
+            await apiPost(`${SERVER}/disconnect`);
+          }}
+          className="bg-red-500 text-white px-4 py-2 rounded-lg shadow"
+        >
+          ❌ Disconnect
+        </button>
       </div>
 
-      {/* 🔥 GRAPH */}
-      <div className="bg-white p-5 rounded-xl shadow">
-        <FootballField spin={latest.spin} />
-        <h3 className="mb-3 font-semibold">Real-Time Spin</h3>
-
-        <ResponsiveContainer width="100%" height={250}>
-          <LineChart data={data}>
-            <XAxis hide dataKey="time" />
-            <YAxis />
-            <Tooltip />
-            <Line
-              type="monotone"
-              dataKey="spin"
-              stroke="#3b82f6"
-              strokeWidth={3}
-              dot={false}
-            />
-          </LineChart>
-        </ResponsiveContainer>
+      {/* SHOT */}
+      <div className="bg-yellow-100 p-3 rounded">
+        ⚡ Shot Type: {data.shot}
       </div>
 
+      {/* STATS */}
+      <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+        <Card title="Speed" value={data.speed} />
+        <Card title="Spin" value={data.spin} />
+        <Card title="Force" value={data.force} />
+        <Card title="Distance" value={data.distance} />
+      </div>
+
+      {/* 📈 GRAPH */}
+      <div className="bg-white p-4 rounded-xl shadow">
+        <h2 className="mb-3 font-semibold">📊 Live Performance</h2>
+
+        <div style={{ width: "100%", height: 300 }}>
+          <ResponsiveContainer>
+            <LineChart data={history}>
+              <CartesianGrid strokeDasharray="3 3" />
+              <XAxis dataKey="time" />
+              <YAxis />
+              <Tooltip />
+
+              <Line type="monotone" dataKey="speed" stroke="#22c55e" strokeWidth={3} dot={false} />
+              <Line type="monotone" dataKey="spin" stroke="#3b82f6" strokeWidth={3} dot={false} />
+            </LineChart>
+          </ResponsiveContainer>
+        </div>
+      </div>
     </div>
   );
 }
 
-/* 🔹 CARD */
-function Card({ title, value, highlight }) {
+function Card({ title, value }) {
   return (
-    <div
-      className={`p-4 rounded-xl shadow text-center transition ${
-        highlight ? "bg-red-200 scale-105" : "bg-white"
-      }`}
-    >
+    <div className="p-4 bg-white rounded-xl shadow text-center">
       <p className="text-gray-500">{title}</p>
-      <h2 className="text-2xl font-bold text-blue-600">
-        {value || "--"}
-      </h2>
+      <h2 className="text-xl font-bold">{value}</h2>
     </div>
   );
 }

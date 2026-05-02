@@ -1,170 +1,112 @@
-import { useState, useEffect } from "react";
-import { useNavigate } from "react-router-dom";
+import { useEffect, useState } from "react";
 
 export default function Players() {
   const [players, setPlayers] = useState([]);
-  const [form, setForm] = useState({
-    name: "",
-    kick: "",
-    speed: "",
-    spin: "",
-  });
+  const [name, setName] = useState("");
+  const [activePlayer, setActivePlayer] = useState(null);
 
-  const [editIndex, setEditIndex] = useState(null);
-
-  const navigate = useNavigate(); // ✅ CORRECT PLACE
-
+  // 🔥 LOAD FROM LOCAL STORAGE
   useEffect(() => {
-    const stored = JSON.parse(localStorage.getItem("fb_players")) || [];
-    setPlayers(stored);
+    const savedPlayers = JSON.parse(localStorage.getItem("players")) || [];
+    const savedActive = JSON.parse(localStorage.getItem("activePlayer"));
+
+    setPlayers(savedPlayers);
+    setActivePlayer(savedActive);
   }, []);
 
-  const savePlayers = (data) => {
-    localStorage.setItem("fb_players", JSON.stringify(data));
-    setPlayers(data);
-  };
+  // 🔥 SAVE TO LOCAL STORAGE
+  useEffect(() => {
+    localStorage.setItem("players", JSON.stringify(players));
+    localStorage.setItem("activePlayer", JSON.stringify(activePlayer));
+  }, [players, activePlayer]);
 
-  const handleChange = (e) => {
-    setForm({ ...form, [e.target.name]: e.target.value });
-  };
-
-  // ADD OR UPDATE
-  const handleSubmit = () => {
-    if (!form.name) return;
+  // ➕ ADD PLAYER
+  const addPlayer = () => {
+    if (!name.trim()) return;
 
     const newPlayer = {
-      name: form.name,
-      kick: Number(form.kick),
-      speed: Number(form.speed),
-      spin: Number(form.spin),
+      id: Date.now(),
+      name,
     };
 
-    let updated;
+    setPlayers([...players, newPlayer]);
+    setName("");
+  };
 
-    if (editIndex !== null) {
-      updated = [...players];
-      updated[editIndex] = newPlayer;
-    } else {
-      updated = [...players, newPlayer];
+  // ❌ DELETE PLAYER
+  const deletePlayer = (id) => {
+    const updated = players.filter((p) => p.id !== id);
+    setPlayers(updated);
+
+    if (activePlayer?.id === id) {
+      setActivePlayer(null);
     }
-
-    savePlayers(updated);
-
-    // Reset form
-    setForm({
-      name: "",
-      kick: "",
-      speed: "",
-      spin: "",
-    });
-
-    setEditIndex(null);
-  };
-
-  // DELETE
-  const deletePlayer = (index) => {
-    const updated = players.filter((_, i) => i !== index);
-    savePlayers(updated);
-  };
-
-  // EDIT
-  const editPlayer = (index) => {
-    const p = players[index];
-    setForm(p);
-    setEditIndex(index);
   };
 
   return (
-    <div className="p-6 space-y-6">
-      <h1 className="text-3xl font-bold dark:text-white">Players</h1>
+    <div className="p-6 space-y-6 animate-fadeIn">
 
-      {/* FORM */}
-      <div className="bg-white dark:bg-slate-800 p-5 rounded-xl shadow space-y-3">
-        <h2 className="font-semibold dark:text-white">
-          {editIndex !== null ? "Edit Player" : "Add Player"}
-        </h2>
+      {/* HEADER */}
+      <h1 className="text-3xl font-bold">👤 Players</h1>
 
+      {/* ADD PLAYER */}
+      <div className="flex gap-3">
         <input
-          name="name"
-          placeholder="Name"
-          value={form.name}
-          onChange={handleChange}
-          className="border p-2 w-full rounded dark:bg-slate-700 dark:text-white"
-        />
-
-        <input
-          name="kick"
-          placeholder="Kick Force"
-          value={form.kick}
-          onChange={handleChange}
-          className="border p-2 w-full rounded dark:bg-slate-700 dark:text-white"
-        />
-
-        <input
-          name="speed"
-          placeholder="Ball Speed"
-          value={form.speed}
-          onChange={handleChange}
-          className="border p-2 w-full rounded dark:bg-slate-700 dark:text-white"
-        />
-
-        <input
-          name="spin"
-          placeholder="Spin Rate"
-          value={form.spin}
-          onChange={handleChange}
-          className="border p-2 w-full rounded dark:bg-slate-700 dark:text-white"
+          value={name}
+          onChange={(e) => setName(e.target.value)}
+          placeholder="Enter player name..."
+          className="flex-1 px-4 py-2 border rounded-lg outline-none"
         />
 
         <button
-          onClick={handleSubmit}
-          className="bg-blue-600 text-white px-4 py-2 rounded"
+          onClick={addPlayer}
+          className="bg-green-500 hover:bg-green-600 text-white px-4 py-2 rounded-lg shadow"
         >
-          {editIndex !== null ? "Update Player" : "Add Player"}
+          ➕ Add
         </button>
       </div>
 
-      {/* PLAYER CARDS */}
+      {/* PLAYER LIST */}
       <div className="grid md:grid-cols-3 gap-4">
-        {players.length === 0 ? (
-          <p className="dark:text-white">No players yet 👆</p>
-        ) : (
-          players.map((p, i) => (
-            <div
-              key={i}
-              onClick={() => navigate(`/player/${p.name}`)} // ✅ CLICK TO ANALYTICS
-              className="bg-white dark:bg-slate-800 p-4 rounded-xl shadow hover:shadow-lg hover:scale-105 transition cursor-pointer"
-            >
-              <h3 className="text-lg font-bold dark:text-white">{p.name}</h3>
 
-              <div className="mt-2 text-sm space-y-1 dark:text-gray-300">
-                <p>⚡ Kick: {p.kick} N</p>
-                <p>🏃 Speed: {p.speed} km/h</p>
-                <p>🌀 Spin: {p.spin} RPM</p>
-              </div>
-
-              {/* STOP CLICK PROPAGATION FOR BUTTONS */}
-              <div
-                className="flex gap-2 mt-4"
-                onClick={(e) => e.stopPropagation()}
-              >
-                <button
-                  onClick={() => editPlayer(i)}
-                  className="px-3 py-1 text-sm bg-yellow-500 text-white rounded"
-                >
-                  Edit
-                </button>
-
-                <button
-                  onClick={() => deletePlayer(i)}
-                  className="px-3 py-1 text-sm bg-red-600 text-white rounded"
-                >
-                  Delete
-                </button>
-              </div>
-            </div>
-          ))
+        {players.length === 0 && (
+          <p className="text-gray-500">No players added yet.</p>
         )}
+
+        {players.map((player) => (
+          <div
+            key={player.id}
+            className={`p-4 rounded-xl shadow cursor-pointer border transition
+              ${
+                activePlayer?.id === player.id
+                  ? "bg-blue-100 border-blue-500"
+                  : "bg-white hover:shadow-lg"
+              }`}
+            onClick={() => setActivePlayer(player)}
+          >
+            <div className="flex justify-between items-center">
+              <h2 className="font-semibold text-lg">
+                {player.name}
+              </h2>
+
+              <button
+                onClick={(e) => {
+                  e.stopPropagation();
+                  deletePlayer(player.id);
+                }}
+                className="text-red-500 hover:text-red-700"
+              >
+                ❌
+              </button>
+            </div>
+
+            {activePlayer?.id === player.id && (
+              <p className="text-sm text-blue-600 mt-2">
+                Active Player
+              </p>
+            )}
+          </div>
+        ))}
       </div>
     </div>
   );

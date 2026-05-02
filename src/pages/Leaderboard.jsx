@@ -1,35 +1,27 @@
 import { useEffect, useState } from "react";
 
 export default function Leaderboard() {
-  const [players, setPlayers] = useState([]);
+  const SERVER = "http://127.0.0.1:5000";
+  const [data, setData] = useState([]);
 
   useEffect(() => {
-    const stored = JSON.parse(localStorage.getItem("fb_players")) || [];
-
-    const ranked = stored.sort((a, b) => {
-      const scoreA = a.kick + a.speed + a.spin;
-      const scoreB = b.kick + b.speed + b.spin;
-      return scoreB - scoreA;
-    });
-
-    setPlayers(ranked);
+    fetch(`${SERVER}/leaderboard`)
+      .then((res) => res.json())
+      .then(setData);
   }, []);
 
   return (
-    <div className="p-6">
-      <h1 className="text-3xl font-bold mb-4">Leaderboard</h1>
+    <div className="space-y-4">
+      <h1 className="text-2xl font-bold">🏆 Player Leaderboard</h1>
 
-      <div className="bg-white rounded-xl shadow p-4">
-        {players.map((p, i) => (
-          <div
-            key={i}
-            className="flex justify-between border-b py-2"
-          >
-            <span>#{i + 1} {p.name}</span>
-            <span>{p.kick + p.speed + p.spin}</span>
-          </div>
-        ))}
-      </div>
+      {data.map((item, i) => (
+        <div key={i} className="p-4 bg-yellow-100 rounded shadow flex justify-between">
+          <span>#{i + 1}</span>
+          <span>{item.player}</span>
+          <span>Score: {item.bestScore.toFixed(1)}</span>
+          <span>Shots: {item.totalShots}</span>
+        </div>
+      ))}
     </div>
   );
 }

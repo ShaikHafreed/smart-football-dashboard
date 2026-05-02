@@ -1,9 +1,29 @@
 @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap');
+
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
 
-/* ✅ YOUR CUSTOM ANIMATION (SAFE) */
+body {
+  font-family: 'Inter', sans-serif;
+}
+
+/* smooth UI */
+* {
+  transition: all 0.2s ease-in-out;
+}
+
+/* scrollbar */
+::-webkit-scrollbar {
+  width: 6px;
+}
+
+::-webkit-scrollbar-thumb {
+  background: #6366f1;
+  border-radius: 10px;
+}
+
+/* animation */
 @keyframes fadeIn {
   from {
     opacity: 0;
@@ -17,9 +37,4 @@
 
 .animate-fadeIn {
   animation: fadeIn 0.8s ease-in-out;
-}
-
-/* OPTIONAL: SMOOTH UI */
-body {
-  font-family: 'Inter', sans-serif;
 }

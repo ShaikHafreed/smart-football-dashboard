@@ -6,44 +6,38 @@ export default function DOBInput() {
   const navigate = useNavigate();
 
   const handleNext = () => {
-    if (!dob) return alert("Select your DOB");
-
-    const name = localStorage.getItem("user_name");
-
-    const user = {
-      name,
-      dob,
-    };
-
-    localStorage.setItem("fb_user", JSON.stringify(user));
-
-    navigate("/dashboard");
+    if (!dob) return;
+    localStorage.setItem("dob", dob);
+    navigate("/login");
   };
 
   return (
-    <div className="h-screen flex items-center justify-center bg-gray-100">
+    <div className="h-screen flex items-center justify-center bg-gradient-to-br from-indigo-100 to-purple-200">
 
-      <div className="bg-white p-8 rounded-xl shadow-lg w-[350px] text-center">
+      <div className="bg-white/70 backdrop-blur-lg p-8 rounded-2xl shadow-xl w-96 space-y-6 animate-fadeIn">
 
-        <h2 className="text-xl font-semibold mb-2">Step 2 of 2</h2>
-        <p className="text-gray-500 mb-4">Your date of birth</p>
+        <h1 className="text-2xl font-bold text-center">
+          🎂 Your DOB
+        </h1>
 
         <input
           type="date"
           value={dob}
           onChange={(e) => setDob(e.target.value)}
-          className="w-full border p-3 rounded mb-5"
+          className="w-full px-4 py-3 rounded-xl border outline-none focus:ring-2 focus:ring-purple-400 transition"
         />
 
         <button
           onClick={handleNext}
-          className="w-full bg-green-600 text-white py-2 rounded hover:bg-green-700"
+          className="w-full bg-purple-500 hover:bg-purple-600 text-white py-3 rounded-xl shadow transition hover:scale-[1.02]"
         >
-          Finish 🎉
+          Continue →
         </button>
 
+        <p className="text-xs text-center text-gray-500">
+          Used for analytics insights
+        </p>
       </div>
-
     </div>
   );
 }
