@@ -1,5 +1,14 @@
 import { useEffect, useState } from "react";
-import FootballField from "../components/FootballField";
+
+import {
+  Wifi,
+  Bluetooth,
+  Power,
+  Zap,
+  Activity,
+  Clock,
+} from "lucide-react";
+
 import {
   LineChart,
   Line,
@@ -11,152 +20,360 @@ import {
 } from "recharts";
 
 export default function Dashboard() {
-  const SERVER = "http://127.0.0.1:5000";
-
-  const [mode, setMode] = useState("none");
 
   const [data, setData] = useState({
     speed: 0,
     spin: 0,
     force: 0,
     distance: 0,
-    shot: "none",
+    shot: "No Shot",
     connected: false,
   });
 
-  const [history, setHistory] = useState([]);
+  const [kickCount, setKickCount] = useState(0);
 
-  // 🔄 FETCH LOOP
+  const [chartData, setChartData] = useState([]);
+
+  const [ballPosition, setBallPosition] = useState(0);
+
+  // =========================
+  // FETCH API DATA
+  // =========================
+
   useEffect(() => {
-    if (mode === "none") return;
 
-    const interval = setInterval(async () => {
+    const fetchData = async () => {
+
       try {
-        const res = await fetch(`${SERVER}/data`);
-        const json = await res.json();
 
-        setData(json);
+        const response =
+          await fetch("http://127.0.0.1:5000/data");
 
-        // ONLY UPDATE GRAPH WHEN CONNECTED
-        if (json.connected) {
-          setHistory((prev) => [
-            ...prev.slice(-30),
+        const result =
+          await response.json();
+
+        setData(result);
+
+        // =========================
+        // IF CONNECTED
+        // =========================
+
+        if (result.connected) {
+
+          setKickCount((prev) => prev + 1);
+
+          setChartData((prev) => [
+
+            ...prev.slice(-14),
+
             {
-              time: new Date().toLocaleTimeString(),
-              speed: json.speed,
-              spin: json.spin,
+              id: prev.length + 1,
+              speed: result.speed,
+              spin: result.spin,
+              force: result.force,
             },
           ]);
+
+          // football movement
+          setBallPosition(
+            (result.distance / 100) * 80
+          );
+
         }
-      } catch (err) {
-        console.log("Backend not reachable");
-      }
-    }, 1000);
+
+        // =========================
+        // IF DISCONNECTED
+        // =========================
+
+        else {
+
+          setData({
+            speed: 0,
+            spin: 0,
+            force: 0,
+            distance: 0,
+            shot: "Disconnected",
+            connected: false,
+          });
+        }
+
+      } catch (error) {
+
+  console.log("Backend not reachable");
+
+  setData({
+    speed: 0,
+    spin: 0,
+    force: 0,
+    distance: 0,
+    shot: "Kick Not Detected",
+    connected: false,
+  });
+}
+    };
+
+    fetchData();
+
+    const interval =
+      setInterval(fetchData, 1000);
 
     return () => clearInterval(interval);
-  }, [mode]);
 
-  // 🔘 API CALL
-  const apiPost = async (url, body = {}) => {
-    await fetch(url, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(body),
-    });
-  };
+  }, []);
 
   return (
-    <div className="p-6 space-y-6">
 
-      {/* FIELD */}
-      <FootballField speed={data.speed} />
+    <div className="min-h-screen bg-gray-100 p-6">
 
-      {/* HEADER */}
-      <div className="flex justify-between items-center">
-        <h1 className="text-3xl font-bold">⚽ Smart Dashboard</h1>
+      {/* TITLE */}
 
-        <span className={`px-3 py-1 rounded-full text-sm ${
-          data.connected
-            ? "bg-green-100 text-green-600"
-            : "bg-red-100 text-red-600"
-        }`}>
-          {data.connected ? "Hardware Connected" : "No Hardware"}
-        </span>
-      </div>
+      <h1 className="text-3xl font-bold mb-8">
+        Smart Analytics
+      </h1>
 
-      {/* 🔘 BUTTONS */}
-      <div className="flex gap-3">
-        <button
-          onClick={async () => {
-            setMode("wifi");
-            await apiPost(`${SERVER}/mode`, { mode: "wifi" });
-          }}
-          className="bg-green-500 text-white px-4 py-2 rounded-lg shadow"
-        >
-          📶 WiFi
-        </button>
+      {/* MAIN CARD */}
 
-        <button
-          onClick={async () => {
-            setMode("bluetooth");
-            await apiPost(`${SERVER}/mode`, { mode: "bluetooth" });
-          }}
-          className="bg-blue-500 text-white px-4 py-2 rounded-lg shadow"
-        >
-          🔵 Bluetooth
-        </button>
+      <div className="bg-gradient-to-r from-blue-950 to-black rounded-3xl p-8 text-white shadow-2xl">
 
-        <button
-          onClick={async () => {
-            setMode("none");
-            await apiPost(`${SERVER}/disconnect`);
-          }}
-          className="bg-red-500 text-white px-4 py-2 rounded-lg shadow"
-        >
-          ❌ Disconnect
-        </button>
-      </div>
+        {/* TOP */}
 
-      {/* SHOT */}
-      <div className="bg-yellow-100 p-3 rounded">
-        ⚡ Shot Type: {data.shot}
-      </div>
+        <div className="flex justify-between items-center">
 
-      {/* STATS */}
-      <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-        <Card title="Speed" value={data.speed} />
-        <Card title="Spin" value={data.spin} />
-        <Card title="Force" value={data.force} />
-        <Card title="Distance" value={data.distance} />
-      </div>
+          <div className="flex items-center gap-4">
 
-      {/* 📈 GRAPH */}
-      <div className="bg-white p-4 rounded-xl shadow">
-        <h2 className="mb-3 font-semibold">📊 Live Performance</h2>
+            <div className="text-6xl">
+              ⚽
+            </div>
 
-        <div style={{ width: "100%", height: 300 }}>
-          <ResponsiveContainer>
-            <LineChart data={history}>
+            <h1 className="text-6xl font-bold">
+              Smart Football AI
+            </h1>
+
+          </div>
+
+          <div className="flex items-center gap-3 text-2xl">
+
+            <div
+              className={`w-5 h-5 rounded-full ${
+                data.connected
+                  ? "bg-green-400"
+                  : "bg-red-500"
+              }`}
+            ></div>
+
+            {
+              data.connected
+                ? "Hardware Connected"
+                : "Hardware Disconnected"
+            }
+
+          </div>
+        </div>
+
+        {/* BUTTONS */}
+
+        <div className="flex gap-5 mt-8">
+
+          <button className="bg-blue-600 px-8 py-4 rounded-2xl text-2xl flex items-center gap-3">
+            <Wifi />
+            WiFi
+          </button>
+
+          <button className="bg-blue-600 px-8 py-4 rounded-2xl text-2xl flex items-center gap-3">
+            <Bluetooth />
+            Bluetooth
+          </button>
+
+          <button className="bg-red-500 px-8 py-4 rounded-2xl text-2xl flex items-center gap-3">
+            <Power />
+            Disconnect
+          </button>
+
+        </div>
+
+        {/* SHOT */}
+
+        <div className="bg-yellow-400 text-black text-3xl font-bold rounded-2xl px-6 py-5 mt-8">
+
+          ⚡ Shot Type:
+          {" "}
+          {data.shot}
+
+        </div>
+
+        {/* CARDS */}
+
+        <div className="grid grid-cols-4 gap-6 mt-8">
+
+          {/* SPEED */}
+
+          <div className="bg-gray-800 rounded-3xl p-8 text-center">
+
+            <h2 className="text-3xl">
+              Speed
+            </h2>
+
+            <p className="text-6xl font-bold mt-5">
+              {data.speed}
+            </p>
+
+          </div>
+
+          {/* SPIN */}
+
+          <div className="bg-gray-800 rounded-3xl p-8 text-center">
+
+            <h2 className="text-3xl">
+              Spin
+            </h2>
+
+            <p className="text-6xl font-bold mt-5">
+              {data.spin}
+            </p>
+
+          </div>
+
+          {/* FORCE */}
+
+          <div className="bg-gray-800 rounded-3xl p-8 text-center">
+
+            <h2 className="text-3xl">
+              Force
+            </h2>
+
+            <p className="text-6xl font-bold mt-5">
+              {data.force}
+            </p>
+
+          </div>
+
+          {/* DISTANCE */}
+
+          <div className="bg-gray-800 rounded-3xl p-8 text-center">
+
+            <h2 className="text-3xl">
+              Distance
+            </h2>
+
+            <p className="text-6xl font-bold mt-5">
+              {data.distance}
+            </p>
+
+          </div>
+
+        </div>
+
+        {/* EXTRA CARDS */}
+
+        <div className="grid grid-cols-2 gap-6 mt-8">
+
+          {/* TOTAL KICKS */}
+
+          <div className="bg-gray-800 rounded-3xl p-8">
+
+            <div className="flex items-center gap-3 text-3xl">
+
+              <Activity />
+
+              Total Kicks
+
+            </div>
+
+            <h1 className="text-6xl font-bold mt-5">
+              {kickCount}
+            </h1>
+
+          </div>
+
+          {/* LAST SHOT */}
+
+          <div className="bg-gray-800 rounded-3xl p-8">
+
+            <div className="flex items-center gap-3 text-3xl">
+
+              <Clock />
+
+              Last Kick
+
+            </div>
+
+            <h1 className="text-5xl font-bold mt-5">
+              {data.shot}
+            </h1>
+
+          </div>
+
+        </div>
+
+        {/* GRAPH */}
+
+        <div className="bg-gray-800 rounded-3xl p-8 mt-8">
+
+          <h1 className="text-4xl font-bold mb-8">
+            📊 Live Performance
+          </h1>
+
+          <ResponsiveContainer
+            width="100%"
+            height={400}
+          >
+
+            <LineChart data={chartData}>
+
               <CartesianGrid strokeDasharray="3 3" />
-              <XAxis dataKey="time" />
+
+              <XAxis dataKey="id" />
+
               <YAxis />
+
               <Tooltip />
 
-              <Line type="monotone" dataKey="speed" stroke="#22c55e" strokeWidth={3} dot={false} />
-              <Line type="monotone" dataKey="spin" stroke="#3b82f6" strokeWidth={3} dot={false} />
-            </LineChart>
-          </ResponsiveContainer>
-        </div>
-      </div>
-    </div>
-  );
-}
+              <Line
+                type="monotone"
+                dataKey="speed"
+                stroke="#22c55e"
+                strokeWidth={4}
+              />
 
-function Card({ title, value }) {
-  return (
-    <div className="p-4 bg-white rounded-xl shadow text-center">
-      <p className="text-gray-500">{title}</p>
-      <h2 className="text-xl font-bold">{value}</h2>
+              <Line
+                type="monotone"
+                dataKey="spin"
+                stroke="#3b82f6"
+                strokeWidth={4}
+              />
+
+              <Line
+                type="monotone"
+                dataKey="force"
+                stroke="#ef4444"
+                strokeWidth={4}
+              />
+
+            </LineChart>
+
+          </ResponsiveContainer>
+
+        </div>
+
+        {/* FOOTBALL FIELD */}
+
+        <div className="bg-green-700 rounded-3xl mt-8 p-10 relative h-64 overflow-hidden border-4 border-green-400">
+
+          <div className="absolute left-1/2 top-0 bottom-0 w-1 bg-white"></div>
+
+          <div
+            className="text-7xl absolute transition-all duration-700"
+            style={{
+              left: `${ballPosition}%`,
+              top: "35%",
+            }}
+          >
+            ⚽
+          </div>
+
+        </div>
+
+      </div>
     </div>
   );
 }
