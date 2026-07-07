@@ -1,54 +1,39 @@
-import React, { createContext, useState, useContext, useEffect } from "react";
+import { createContext, useContext, useEffect, useState } from "react";
+import { supabase } from "./supabaseClient";
 
 const AuthContext = createContext();
 
 export const AuthProvider = ({ children }) => {
-  const [user, setUser] = useState(null);
-  const [isAuthenticated, setIsAuthenticated] = useState(false);
-  const [isLoadingAuth, setIsLoadingAuth] = useState(false);
-  const [authError, setAuthError] = useState(null);
+  const [session, setSession] = useState(null);
+  const [isLoadingAuth, setIsLoadingAuth] = useState(true);
 
-  // ✅ Load user from localStorage
   useEffect(() => {
-    const name = localStorage.getItem("fb_name");
-    const role = localStorage.getItem("fb_role");
+    supabase.auth.getSession().then(({ data }) => {
+      setSession(data.session);
+      setIsLoadingAuth(false);
+    });
 
-    if (name) {
-      setUser({ name, role });
-      setIsAuthenticated(true);
-    }
+    const { data: listener } = supabase.auth.onAuthStateChange((_event, newSession) => {
+      setSession(newSession);
+    });
+
+    return () => listener.subscription.unsubscribe();
   }, []);
 
-  // ✅ Simple login
-  const login = (name, role = "player") => {
-    localStorage.setItem("fb_name", name);
-    localStorage.setItem("fb_role", role);
-
-    setUser({ name, role });
-    setIsAuthenticated(true);
-  };
-
-  // ✅ Simple logout
-  const logout = () => {
-    localStorage.removeItem("fb_name");
-    localStorage.removeItem("fb_role");
-    localStorage.removeItem("fb_dob");
-
-    setUser(null);
-    setIsAuthenticated(false);
-
-    window.location.href = "/";
-  };
+  const signUp = (email, password) => supabase.auth.signUp({ email, password });
+  const signIn = (email, password) => supabase.auth.signInWithPassword({ email, password });
+  const signOut = () => supabase.auth.signOut();
 
   return (
     <AuthContext.Provider
       value={{
-        user,
-        isAuthenticated,
+        session,
+        user: session?.user ?? null,
+        isAuthenticated: !!session,
         isLoadingAuth,
-        authError,
-        login,
-        logout,
+        signUp,
+        signIn,
+        signOut,
       }}
     >
       {children}
@@ -56,7 +41,4 @@ export const AuthProvider = ({ children }) => {
   );
 };
 
-// ✅ Hook
-export const useAuth = () => {
-  return useContext(AuthContext);
-};
+export const useAuth = () => useContext(AuthContext);

@@ -1,7 +1,9 @@
 import serial
 import requests
 
-ser = serial.Serial('COM3', 9600)  # change COM port
+SERVER = "http://127.0.0.1:5000/api/data"
+
+ser = serial.Serial('COM3', 9600)  # change COM port to match your ESP32
 
 while True:
     try:
@@ -10,12 +12,12 @@ while True:
 
         speed, spin = map(float, line.split(","))
 
-        requests.post("http://127.0.0.1:5000/esp-data", json={
+        requests.post(SERVER, json={
             "speed": speed,
             "spin": spin,
-            "force": speed * 0.5,
-            "distance": speed * 2,
-            "shot": "kick"
+            "force": round(speed * 0.5, 2),
+            "distance": round(speed * 2, 2),
+            "shot": "kick",
         })
 
     except Exception as e:

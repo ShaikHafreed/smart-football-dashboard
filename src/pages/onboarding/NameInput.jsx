@@ -1,43 +1,56 @@
 import { useState } from "react";
 import { useNavigate } from "react-router-dom";
+import { motion } from "framer-motion";
+import { ArrowRight } from "lucide-react";
+import { supabase } from "../../lib/supabaseClient";
+import { useAuth } from "../../lib/AuthContext";
 
 export default function NameInput() {
   const [name, setName] = useState("");
+  const [saving, setSaving] = useState(false);
   const navigate = useNavigate();
+  const { user } = useAuth();
 
-  const handleNext = () => {
-    if (!name.trim()) return;
-    localStorage.setItem("name", name);
+  const handleNext = async () => {
+    if (!name.trim() || !user) return;
+
+    setSaving(true);
+    await supabase.from("football_profiles").update({ full_name: name }).eq("id", user.id);
+    setSaving(false);
+
     navigate("/onboarding/dob");
   };
 
   return (
-    <div className="h-screen flex items-center justify-center bg-gradient-to-br from-blue-100 to-indigo-200">
-
-      <div className="bg-white/70 backdrop-blur-lg p-8 rounded-2xl shadow-xl w-96 space-y-6 animate-fadeIn">
-
-        <h1 className="text-2xl font-bold text-center">
-          👤 Your Name
-        </h1>
+    <div className="turf-texture floodlight-glow flex h-screen items-center justify-center bg-background p-4 text-foreground">
+      <motion.div
+        initial={{ opacity: 0, y: 12 }}
+        animate={{ opacity: 1, y: 0 }}
+        className="w-full max-w-sm space-y-6 rounded-2xl border border-border bg-card p-8"
+      >
+        <div className="text-center">
+          <span className="text-3xl">👤</span>
+          <h1 className="mt-2 font-display text-xl font-semibold">What's your name?</h1>
+          <p className="mt-1 text-sm text-muted-foreground">This helps personalize your dashboard.</p>
+        </div>
 
         <input
           value={name}
           onChange={(e) => setName(e.target.value)}
+          onKeyDown={(e) => e.key === "Enter" && handleNext()}
           placeholder="Enter your name"
-          className="w-full px-4 py-3 rounded-xl border outline-none focus:ring-2 focus:ring-blue-400 transition"
+          autoFocus
+          className="w-full rounded-lg border border-border bg-secondary/40 px-4 py-3 text-sm outline-none focus:border-primary"
         />
 
         <button
           onClick={handleNext}
-          className="w-full bg-blue-500 hover:bg-blue-600 text-white py-3 rounded-xl shadow transition hover:scale-[1.02]"
+          disabled={saving}
+          className="flex w-full items-center justify-center gap-2 rounded-lg bg-primary py-3 text-sm font-semibold text-primary-foreground transition-opacity hover:opacity-90 disabled:opacity-50"
         >
-          Continue →
+          {saving ? "Saving…" : "Continue"} <ArrowRight className="h-4 w-4" />
         </button>
-
-        <p className="text-xs text-center text-gray-500">
-          This helps personalize your experience
-        </p>
-      </div>
+      </motion.div>
     </div>
   );
 }

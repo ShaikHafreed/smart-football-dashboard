@@ -1,10 +1,19 @@
 import { Navigate } from "react-router-dom";
+import { useAuth } from "../lib/AuthContext";
 
 export default function ProtectedRoute({ children }) {
-  const user = localStorage.getItem("user");
+  const { isAuthenticated, isLoadingAuth } = useAuth();
 
-  if (!user) {
-    return <Navigate to="/" />;
+  if (isLoadingAuth) {
+    return (
+      <div className="h-screen flex items-center justify-center text-lg text-gray-500">
+        Loading…
+      </div>
+    );
+  }
+
+  if (!isAuthenticated) {
+    return <Navigate to="/login" />;
   }
 
   return children;

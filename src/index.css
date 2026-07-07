@@ -1,16 +1,60 @@
-@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;600;700&family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@500;600;700&display=swap');
 
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
 
-body {
-  font-family: 'Inter', sans-serif;
+/*
+  "Night pitch" design tokens — a floodlit football field after dark.
+  Deep green-black base, chalk-white ink, one electric lime accent
+  reserved for live/active state (the ball-impact pulse, active nav, CTAs).
+*/
+:root {
+  --background: 160 24% 6%;
+  --foreground: 140 20% 95%;
+
+  --card: 160 20% 9%;
+  --card-foreground: 140 20% 95%;
+
+  --surface-2: 160 16% 13%;
+
+  --border: 155 16% 18%;
+
+  --primary: 82 100% 64%;
+  --primary-foreground: 160 30% 8%;
+
+  --secondary: 160 16% 15%;
+  --secondary-foreground: 140 20% 95%;
+
+  --muted: 160 14% 16%;
+  --muted-foreground: 155 10% 65%;
+
+  --accent: 160 16% 16%;
+  --accent-foreground: 140 20% 95%;
+
+  --warn: 38 100% 64%;
+
+  --destructive: 0 84% 65%;
+  --destructive-foreground: 0 0% 100%;
 }
 
-/* smooth UI */
 * {
-  transition: all 0.2s ease-in-out;
+  border-color: hsl(var(--border));
+}
+
+body {
+  font-family: 'Inter', sans-serif;
+  background: hsl(var(--background));
+  color: hsl(var(--foreground));
+}
+
+h1, h2, h3, h4, .font-display {
+  font-family: 'Space Grotesk', sans-serif;
+}
+
+.font-data {
+  font-family: 'JetBrains Mono', monospace;
+  font-variant-numeric: tabular-nums;
 }
 
 /* scrollbar */
@@ -19,22 +63,54 @@ body {
 }
 
 ::-webkit-scrollbar-thumb {
-  background: #6366f1;
+  background: hsl(var(--primary) / 0.4);
   border-radius: 10px;
 }
 
-/* animation */
-@keyframes fadeIn {
-  from {
-    opacity: 0;
-    transform: translateY(20px);
-  }
-  to {
-    opacity: 1;
-    transform: translateY(0);
-  }
+/* ============================================
+   Signature texture: faint mow-stripe turf +
+   a soft floodlight glow. Used sparingly —
+   hero/auth panels only.
+   ============================================ */
+.turf-texture {
+  background-image: repeating-linear-gradient(
+    115deg,
+    hsl(var(--primary) / 0.05) 0px,
+    hsl(var(--primary) / 0.05) 2px,
+    transparent 2px,
+    transparent 46px
+  );
 }
 
+.floodlight-glow {
+  background:
+    radial-gradient(60% 50% at 50% 0%, hsl(var(--primary) / 0.16), transparent 70%),
+    radial-gradient(40% 40% at 100% 100%, hsl(var(--primary) / 0.08), transparent 70%);
+}
+
+/* ============================================
+   Motion
+   ============================================ */
+@keyframes fadeIn {
+  from { opacity: 0; transform: translateY(20px); }
+  to { opacity: 1; transform: translateY(0); }
+}
 .animate-fadeIn {
-  animation: fadeIn 0.8s ease-in-out;
+  animation: fadeIn 0.6s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+@keyframes pulseRing {
+  0%   { transform: scale(0.7); opacity: 0.9; }
+  100% { transform: scale(2.2); opacity: 0; }
+}
+.animate-pulseRing {
+  animation: pulseRing 1.1s cubic-bezier(0.16, 1, 0.3, 1) infinite;
+}
+
+@keyframes spin-slow {
+  from { transform: rotate(0deg); }
+  to { transform: rotate(360deg); }
+}
+.animate-spin-slow {
+  animation: spin-slow 6s linear infinite;
 }

@@ -1,79 +1,171 @@
 import { useState } from "react";
 import { useNavigate } from "react-router-dom";
+import { motion, AnimatePresence } from "framer-motion";
+import { Mail, Lock, ArrowRight, Loader2 } from "lucide-react";
+import { useAuth } from "../lib/AuthContext";
 
 export default function Login() {
   const navigate = useNavigate();
+  const { signIn, signUp } = useAuth();
 
+  const [mode, setMode] = useState("login"); // "login" | "signup"
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
+  const [error, setError] = useState("");
+  const [loading, setLoading] = useState(false);
 
-  // 🔥 HANDLE LOGIN
-  const handleLogin = (e) => {
+  const handleSubmit = async (e) => {
     e.preventDefault();
+    setError("");
+    setLoading(true);
 
-    // 👉 SIMPLE VALIDATION
-    if (!email || !password) {
-      alert("Please enter email and password");
+    const { error: authError } =
+      mode === "login" ? await signIn(email, password) : await signUp(email, password);
+
+    setLoading(false);
+
+    if (authError) {
+      setError(authError.message);
       return;
     }
 
-    // 🔥 SAVE USER (TEMP LOCAL STORAGE)
-    localStorage.setItem("user", JSON.stringify({ email }));
+    navigate(mode === "signup" ? "/onboarding/name" : "/dashboard");
+  };
 
-    // 🚀 REDIRECT TO HOME (DASHBOARD)
-    navigate("/dashboard");
+  const switchMode = () => {
+    setError("");
+    setMode((m) => (m === "login" ? "signup" : "login"));
   };
 
   return (
-    <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-blue-900 to-purple-900">
+    <div className="min-h-screen bg-background text-foreground flex items-center justify-center p-4">
+      <div className="w-full max-w-4xl overflow-hidden rounded-2xl border border-border bg-card shadow-2xl md:grid md:grid-cols-2">
 
-      <div className="bg-white p-8 rounded-2xl shadow-xl w-full max-w-md animate-fadeIn">
+        {/* BRAND / SIGNATURE PANEL */}
+        <div className="turf-texture floodlight-glow relative hidden flex-col justify-between overflow-hidden bg-card p-10 md:flex">
+          <div className="relative z-10 flex items-center gap-2">
+            <span className="text-2xl">⚽</span>
+            <span className="font-display text-lg font-semibold">Smart Football AI</span>
+          </div>
 
-        <h1 className="text-2xl font-bold mb-6 text-center">
-          🔐 Login to Smart Football
-        </h1>
+          {/* signature pulse */}
+          <div className="relative z-10 flex flex-1 items-center justify-center">
+            <div className="relative flex h-40 w-40 items-center justify-center">
+              <AnimatePresence>
+                <motion.span
+                  key="ring1"
+                  initial={{ scale: 0.6, opacity: 0.8 }}
+                  animate={{ scale: 2.2, opacity: 0 }}
+                  transition={{ duration: 2.2, repeat: Infinity, ease: "easeOut" }}
+                  className="absolute inset-0 rounded-full border-2 border-primary/60"
+                />
+                <motion.span
+                  key="ring2"
+                  initial={{ scale: 0.6, opacity: 0.6 }}
+                  animate={{ scale: 1.7, opacity: 0 }}
+                  transition={{ duration: 2.2, repeat: Infinity, ease: "easeOut", delay: 0.5 }}
+                  className="absolute inset-0 rounded-full border border-primary/40"
+                />
+              </AnimatePresence>
+              <motion.span
+                animate={{ rotate: 360 }}
+                transition={{ duration: 5, repeat: Infinity, ease: "linear" }}
+                className="text-7xl"
+              >
+                ⚽
+              </motion.span>
+            </div>
+          </div>
 
-        <form onSubmit={handleLogin} className="space-y-4">
+          <div className="relative z-10 space-y-1">
+            <p className="font-display text-xl font-semibold leading-snug">
+              Every kick,<br /> measured in real time.
+            </p>
+            <p className="text-sm text-muted-foreground">
+              Speed, spin, force and distance — captured live from the pitch.
+            </p>
+          </div>
+        </div>
 
-          <input
-            type="email"
-            placeholder="Email"
-            className="w-full p-3 border rounded-lg"
-            value={email}
-            onChange={(e) => setEmail(e.target.value)}
-          />
+        {/* FORM PANEL */}
+        <div className="relative p-8 sm:p-10">
+          <AnimatePresence mode="wait">
+            <motion.div
+              key={mode}
+              initial={{ opacity: 0, x: 12 }}
+              animate={{ opacity: 1, x: 0 }}
+              exit={{ opacity: 0, x: -12 }}
+              transition={{ duration: 0.2 }}
+            >
+              <h1 className="font-display text-2xl font-semibold">
+                {mode === "login" ? "Welcome back" : "Create your account"}
+              </h1>
+              <p className="mt-1 text-sm text-muted-foreground">
+                {mode === "login"
+                  ? "Log in to view your live analytics."
+                  : "Set up a coach account to start tracking players."}
+              </p>
 
-          <input
-            type="password"
-            placeholder="Password"
-            className="w-full p-3 border rounded-lg"
-            value={password}
-            onChange={(e) => setPassword(e.target.value)}
-          />
+              <form onSubmit={handleSubmit} className="mt-8 space-y-4">
+                <div className="relative">
+                  <Mail className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+                  <input
+                    type="email"
+                    placeholder="Email"
+                    className="w-full rounded-lg border border-border bg-secondary/40 py-3 pl-10 pr-3 text-sm outline-none transition-colors focus:border-primary"
+                    value={email}
+                    onChange={(e) => setEmail(e.target.value)}
+                    required
+                  />
+                </div>
 
-          <button
-            type="submit"
-            className="w-full bg-blue-600 text-white py-3 rounded-lg hover:bg-blue-700 transition"
-          >
-            Login
-          </button>
-        </form>
+                <div className="relative">
+                  <Lock className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+                  <input
+                    type="password"
+                    placeholder="Password (min 6 characters)"
+                    className="w-full rounded-lg border border-border bg-secondary/40 py-3 pl-10 pr-3 text-sm outline-none transition-colors focus:border-primary"
+                    value={password}
+                    onChange={(e) => setPassword(e.target.value)}
+                    minLength={6}
+                    required
+                  />
+                </div>
 
-        {/* EXTRA OPTIONS */}
-        <div className="mt-6 space-y-3">
+                {error && (
+                  <p className="rounded-lg bg-destructive/10 px-3 py-2 text-sm text-destructive">
+                    {error}
+                  </p>
+                )}
 
-          <button className="w-full bg-red-500 text-white py-2 rounded-lg">
-            Continue with Google
-          </button>
+                <button
+                  type="submit"
+                  disabled={loading}
+                  className="flex w-full items-center justify-center gap-2 rounded-lg bg-primary py-3 text-sm font-semibold text-primary-foreground transition-opacity hover:opacity-90 disabled:opacity-50"
+                >
+                  {loading ? (
+                    <Loader2 className="h-4 w-4 animate-spin" />
+                  ) : (
+                    <>
+                      {mode === "login" ? "Login" : "Sign Up"}
+                      <ArrowRight className="h-4 w-4" />
+                    </>
+                  )}
+                </button>
+              </form>
 
-          <button className="w-full bg-blue-700 text-white py-2 rounded-lg">
-            Continue with Facebook
-          </button>
-
-          <button className="w-full bg-gray-800 text-white py-2 rounded-lg">
-            Continue with Mobile Number
-          </button>
-
+              <button
+                onClick={switchMode}
+                className="mt-6 w-full text-center text-sm text-muted-foreground hover:text-primary transition-colors"
+              >
+                {mode === "login" ? (
+                  <>Need an account? <span className="font-medium text-primary">Sign up</span></>
+                ) : (
+                  <>Already have an account? <span className="font-medium text-primary">Login</span></>
+                )}
+              </button>
+            </motion.div>
+          </AnimatePresence>
         </div>
       </div>
     </div>

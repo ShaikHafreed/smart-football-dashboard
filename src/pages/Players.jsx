@@ -1,112 +1,137 @@
 import { useEffect, useState } from "react";
+import { motion, AnimatePresence } from "framer-motion";
+import { UserPlus, Trash2, CheckCircle2 } from "lucide-react";
+import { supabase } from "../lib/supabaseClient";
+import { useAuth } from "../lib/AuthContext";
 
 export default function Players() {
+  const { user } = useAuth();
   const [players, setPlayers] = useState([]);
   const [name, setName] = useState("");
-  const [activePlayer, setActivePlayer] = useState(null);
+  const [activePlayerId, setActivePlayerId] = useState(
+    localStorage.getItem("activePlayerId") || null
+  );
+  const [loading, setLoading] = useState(true);
 
-  // 🔥 LOAD FROM LOCAL STORAGE
-  useEffect(() => {
-    const savedPlayers = JSON.parse(localStorage.getItem("players")) || [];
-    const savedActive = JSON.parse(localStorage.getItem("activePlayer"));
+  const loadPlayers = async () => {
+    const { data } = await supabase
+      .from("football_players")
+      .select("*")
+      .order("created_at", { ascending: true });
 
-    setPlayers(savedPlayers);
-    setActivePlayer(savedActive);
-  }, []);
-
-  // 🔥 SAVE TO LOCAL STORAGE
-  useEffect(() => {
-    localStorage.setItem("players", JSON.stringify(players));
-    localStorage.setItem("activePlayer", JSON.stringify(activePlayer));
-  }, [players, activePlayer]);
-
-  // ➕ ADD PLAYER
-  const addPlayer = () => {
-    if (!name.trim()) return;
-
-    const newPlayer = {
-      id: Date.now(),
-      name,
-    };
-
-    setPlayers([...players, newPlayer]);
-    setName("");
+    setPlayers(data || []);
+    setLoading(false);
   };
 
-  // ❌ DELETE PLAYER
-  const deletePlayer = (id) => {
-    const updated = players.filter((p) => p.id !== id);
-    setPlayers(updated);
+  useEffect(() => {
+    if (user) loadPlayers();
+  }, [user]);
 
-    if (activePlayer?.id === id) {
-      setActivePlayer(null);
+  const addPlayer = async () => {
+    if (!name.trim() || !user) return;
+
+    const { error } = await supabase
+      .from("football_players")
+      .insert({ name, user_id: user.id });
+
+    if (!error) {
+      setName("");
+      loadPlayers();
     }
   };
 
-  return (
-    <div className="p-6 space-y-6 animate-fadeIn">
+  const deletePlayer = async (id) => {
+    await supabase.from("football_players").delete().eq("id", id);
 
-      {/* HEADER */}
-      <h1 className="text-3xl font-bold">👤 Players</h1>
+    if (activePlayerId === id) {
+      setActivePlayerId(null);
+      localStorage.removeItem("activePlayerId");
+    }
+
+    loadPlayers();
+  };
+
+  const selectActive = (id) => {
+    setActivePlayerId(id);
+    localStorage.setItem("activePlayerId", id);
+  };
+
+  return (
+    <div className="space-y-6 animate-fadeIn">
+
+      <div>
+        <h1 className="font-display text-2xl font-semibold">Players</h1>
+        <p className="text-sm text-muted-foreground">Pick an active player before starting a Session.</p>
+      </div>
 
       {/* ADD PLAYER */}
       <div className="flex gap-3">
         <input
           value={name}
           onChange={(e) => setName(e.target.value)}
+          onKeyDown={(e) => e.key === "Enter" && addPlayer()}
           placeholder="Enter player name..."
-          className="flex-1 px-4 py-2 border rounded-lg outline-none"
+          className="flex-1 rounded-lg border border-border bg-card px-4 py-2.5 text-sm outline-none focus:border-primary"
         />
 
-        <button
+        <motion.button
+          whileTap={{ scale: 0.96 }}
           onClick={addPlayer}
-          className="bg-green-500 hover:bg-green-600 text-white px-4 py-2 rounded-lg shadow"
+          className="flex items-center gap-2 rounded-lg bg-primary px-4 py-2.5 text-sm font-semibold text-primary-foreground"
         >
-          ➕ Add
-        </button>
+          <UserPlus className="h-4 w-4" /> Add
+        </motion.button>
       </div>
 
       {/* PLAYER LIST */}
-      <div className="grid md:grid-cols-3 gap-4">
+      <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
 
-        {players.length === 0 && (
-          <p className="text-gray-500">No players added yet.</p>
+        {loading && <p className="text-muted-foreground">Loading…</p>}
+
+        {!loading && players.length === 0 && (
+          <p className="text-muted-foreground">No players added yet.</p>
         )}
 
-        {players.map((player) => (
-          <div
-            key={player.id}
-            className={`p-4 rounded-xl shadow cursor-pointer border transition
-              ${
-                activePlayer?.id === player.id
-                  ? "bg-blue-100 border-blue-500"
-                  : "bg-white hover:shadow-lg"
-              }`}
-            onClick={() => setActivePlayer(player)}
-          >
-            <div className="flex justify-between items-center">
-              <h2 className="font-semibold text-lg">
-                {player.name}
-              </h2>
-
-              <button
-                onClick={(e) => {
-                  e.stopPropagation();
-                  deletePlayer(player.id);
-                }}
-                className="text-red-500 hover:text-red-700"
+        <AnimatePresence>
+          {players.map((player) => {
+            const isActive = activePlayerId === player.id;
+            return (
+              <motion.div
+                key={player.id}
+                layout
+                initial={{ opacity: 0, y: 8 }}
+                animate={{ opacity: 1, y: 0 }}
+                exit={{ opacity: 0, scale: 0.95 }}
+                onClick={() => selectActive(player.id)}
+                className={`cursor-pointer rounded-xl border p-4 transition-colors
+                  ${isActive
+                    ? "border-primary/60 bg-primary/10"
+                    : "border-border bg-card hover:border-primary/30"}`}
               >
-                ❌
-              </button>
-            </div>
+                <div className="flex items-center justify-between">
+                  <h2 className="font-medium">{player.name}</h2>
 
-            {activePlayer?.id === player.id && (
-              <p className="text-sm text-blue-600 mt-2">
-                Active Player
-              </p>
-            )}
-          </div>
-        ))}
+                  <button
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      deletePlayer(player.id);
+                    }}
+                    className="text-muted-foreground hover:text-destructive"
+                    aria-label={`Delete ${player.name}`}
+                  >
+                    <Trash2 className="h-4 w-4" />
+                  </button>
+                </div>
+
+                {isActive && (
+                  <p className="mt-2 flex items-center gap-1.5 text-xs font-medium text-primary">
+                    <CheckCircle2 className="h-3.5 w-3.5" /> Active for next Session
+                  </p>
+                )}
+              </motion.div>
+            );
+          })}
+        </AnimatePresence>
       </div>
     </div>
   );
