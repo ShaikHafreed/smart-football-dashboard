@@ -11,21 +11,28 @@ export default function PlayerDetailModal({ player, onClose, onUpdated }) {
   const [fields, setFields] = useState({ dob: "", avatar_url: "" });
   const [saving, setSaving] = useState(false);
 
+  // player is only ever non-null once its id is present, but this component
+  // stays mounted permanently (only its content is conditionally rendered
+  // via AnimatePresence below), so every access to it here is optional —
+  // there is no point in the mount/prop-change lifecycle where `player.x`
+  // is safe to read without the `?.`.
+  const playerId = player?.id ?? null;
+
   useEffect(() => {
-    if (!player) return;
+    if (!playerId) return;
     setLoading(true);
-    setFields({ dob: player.dob || "", avatar_url: player.avatar_url || "" });
+    setFields({ dob: player?.dob || "", avatar_url: player?.avatar_url || "" });
 
     supabase
       .from("football_shots")
       .select("speed, spin, force, distance, shot_type, created_at")
-      .eq("player_id", player.id)
+      .eq("player_id", playerId)
       .order("created_at", { ascending: true })
       .then(({ data }) => {
         setShots(data || []);
         setLoading(false);
       });
-  }, [player]);
+  }, [playerId]);
 
   const bests = shots.reduce(
     (acc, s) => ({
@@ -46,8 +53,9 @@ export default function PlayerDetailModal({ player, onClose, onUpdated }) {
   };
 
   const handleSave = async () => {
+    if (!playerId) return;
     setSaving(true);
-    await supabase.from("football_players").update(fields).eq("id", player.id);
+    await supabase.from("football_players").update(fields).eq("id", playerId);
     setSaving(false);
     setEditMode(false);
     onUpdated?.();
@@ -75,8 +83,8 @@ export default function PlayerDetailModal({ player, onClose, onUpdated }) {
               <div className="flex items-center gap-3">
                 <div className="relative">
                   <img
-                    src={fields.avatar_url || `https://api.dicebear.com/9.x/initials/svg?seed=${encodeURIComponent(player.name)}`}
-                    alt={player.name}
+                    src={fields.avatar_url || `https://api.dicebear.com/9.x/initials/svg?seed=${encodeURIComponent(player?.name || "?")}`}
+                    alt={player?.name || ""}
                     className="h-12 w-12 rounded-full border border-primary/30 object-cover"
                   />
                   {editMode && (
@@ -87,7 +95,7 @@ export default function PlayerDetailModal({ player, onClose, onUpdated }) {
                   )}
                 </div>
                 <div>
-                  <h2 className="font-display text-xl font-semibold">{player.name}</h2>
+                  <h2 className="font-display text-xl font-semibold">{player?.name}</h2>
                   {editMode ? (
                     <input
                       type="date"
@@ -96,7 +104,7 @@ export default function PlayerDetailModal({ player, onClose, onUpdated }) {
                       className="mt-0.5 rounded border border-border bg-secondary/40 px-2 py-1 text-xs"
                     />
                   ) : (
-                    <p className="text-xs text-muted-foreground">{player.dob || "No DOB set"}</p>
+                    <p className="text-xs text-muted-foreground">{player?.dob || "No DOB set"}</p>
                   )}
                 </div>
               </div>
@@ -144,7 +152,7 @@ export default function PlayerDetailModal({ player, onClose, onUpdated }) {
 
                 <div>
                   <p className="mb-2 text-xs font-medium text-muted-foreground">Performance by Session</p>
-                  <SessionList playerIds={[player.id]} />
+                  {playerId && <SessionList playerIds={[playerId]} />}
                 </div>
               </div>
             )}
