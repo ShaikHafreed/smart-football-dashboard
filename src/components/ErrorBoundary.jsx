@@ -1,7 +1,7 @@
 import React from "react";
 
 export default class ErrorBoundary extends React.Component {
-  state = { error: null };
+  state = { error: null, info: null };
 
   static getDerivedStateFromError(error) {
     return { error };
@@ -9,6 +9,7 @@ export default class ErrorBoundary extends React.Component {
 
   componentDidCatch(error, info) {
     console.error("[ErrorBoundary]", error, info);
+    this.setState({ info });
   }
 
   render() {
@@ -24,6 +25,13 @@ export default class ErrorBoundary extends React.Component {
           >
             Reload
           </button>
+          <details className="mt-4 w-full max-w-lg text-left">
+            <summary className="cursor-pointer text-xs text-muted-foreground">Technical details</summary>
+            <pre className="mt-2 max-h-64 overflow-auto rounded-lg border border-border bg-card p-3 text-[11px] text-muted-foreground">
+              {this.state.error.stack}
+              {this.state.info?.componentStack}
+            </pre>
+          </details>
         </div>
       );
     }

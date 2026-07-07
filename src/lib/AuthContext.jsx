@@ -34,18 +34,27 @@ export const AuthProvider = ({ children }) => {
   }, []);
 
   useEffect(() => {
-    supabase.auth.getSession().then(async ({ data }) => {
-      setSession(data.session);
-      if (data.session?.user?.id) await loadProfile(data.session.user.id);
-      setIsLoadingAuth(false);
-    });
+    // A single source of truth: onAuthStateChange fires once immediately with
+    // whatever session already exists (including one just parsed from an OAuth
+    // redirect's URL hash), then again on every subsequent change. Racing this
+    // against a separate getSession() call was the bug — right after a fresh
+    // OAuth callback, getSession() could resolve first with a stale/empty
+    // session and flip isLoadingAuth to false before the real one landed,
+    // letting a route render with no user yet.
+    let resolvedFirstState = false;
 
     const { data: listener } = supabase.auth.onAuthStateChange(async (_event, newSession) => {
       setSession(newSession);
+
       if (newSession?.user?.id) {
         await loadProfile(newSession.user.id);
       } else {
         setProfile(null);
+      }
+
+      if (!resolvedFirstState) {
+        resolvedFirstState = true;
+        setIsLoadingAuth(false);
       }
     });
 
