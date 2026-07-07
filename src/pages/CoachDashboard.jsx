@@ -21,6 +21,8 @@ export default function CoachDashboard() {
   const [name, setName] = useState("");
   const [activePlayerId, setActivePlayerId] = useState(localStorage.getItem("activePlayerId") || null);
   const [detailPlayer, setDetailPlayer] = useState(null);
+  const [adding, setAdding] = useState(false);
+  const [addError, setAddError] = useState("");
 
   const loadAll = async () => {
     const { data: playerRows } = await supabase
@@ -50,12 +52,23 @@ export default function CoachDashboard() {
   }, [user]);
 
   const addPlayer = async () => {
-    if (!name.trim() || !user) return;
-    const { error } = await supabase.from("football_players").insert({ name, user_id: user.id });
-    if (!error) {
-      setName("");
-      loadAll();
+    if (!name.trim() || !user || adding) return;
+
+    setAdding(true);
+    setAddError("");
+
+    const { error } = await supabase.from("football_players").insert({ name: name.trim(), user_id: user.id });
+
+    setAdding(false);
+
+    if (error) {
+      console.error("Failed to add player:", error);
+      setAddError(error.message);
+      return;
     }
+
+    setName("");
+    await loadAll();
   };
 
   const deletePlayer = async (id) => {
@@ -137,7 +150,7 @@ export default function CoachDashboard() {
           <span className="ml-auto text-xs text-muted-foreground">{players.length} player{players.length === 1 ? "" : "s"}</span>
         </div>
 
-        <div className="mb-4 flex gap-3">
+        <div className="mb-2 flex gap-3">
           <input
             value={name}
             onChange={(e) => setName(e.target.value)}
@@ -145,10 +158,19 @@ export default function CoachDashboard() {
             placeholder="Add a player..."
             className="flex-1 rounded-lg border border-border bg-secondary/40 px-4 py-2.5 text-sm outline-none focus:border-primary"
           />
-          <motion.button whileTap={{ scale: 0.96 }} onClick={addPlayer} className="flex items-center gap-2 rounded-lg bg-primary px-4 py-2.5 text-sm font-semibold text-primary-foreground">
-            <UserPlus className="h-4 w-4" /> Add
+          <motion.button
+            whileTap={{ scale: 0.96 }}
+            onClick={addPlayer}
+            disabled={adding || !name.trim()}
+            className="flex items-center gap-2 rounded-lg bg-primary px-4 py-2.5 text-sm font-semibold text-primary-foreground disabled:opacity-50"
+          >
+            {adding ? <Loader2 className="h-4 w-4 animate-spin" /> : <UserPlus className="h-4 w-4" />} Add
           </motion.button>
         </div>
+
+        {addError && (
+          <p className="mb-4 rounded-lg bg-destructive/10 px-3 py-2 text-xs text-destructive">{addError}</p>
+        )}
 
         {roster.length === 0 ? (
           <p className="text-sm text-muted-foreground">No players yet — add one above.</p>
