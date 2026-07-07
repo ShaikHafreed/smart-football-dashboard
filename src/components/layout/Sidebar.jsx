@@ -1,3 +1,4 @@
+import { useState } from "react";
 import { NavLink } from "react-router-dom";
 import { motion, AnimatePresence } from "framer-motion";
 import {
@@ -12,6 +13,7 @@ import {
   LogOut,
 } from "lucide-react";
 import { useAuth } from "../../lib/AuthContext";
+import ConfirmDialog from "../ConfirmDialog";
 
 const MENU = [
   { name: "Leaderboard", path: "/leaderboard", icon: Trophy },
@@ -58,6 +60,7 @@ function NavItems({ collapsed, onNavigate }) {
 
 export default function Sidebar({ collapsed, onToggleCollapse, mobileOpen, onCloseMobile }) {
   const { signOut } = useAuth();
+  const [confirmingLogout, setConfirmingLogout] = useState(false);
 
   const handleLogout = async () => {
     await signOut();
@@ -66,6 +69,15 @@ export default function Sidebar({ collapsed, onToggleCollapse, mobileOpen, onClo
 
   return (
     <>
+      <ConfirmDialog
+        open={confirmingLogout}
+        title="Log out?"
+        message="You'll need to log back in to see your dashboard, players and history."
+        confirmLabel="Log out"
+        onCancel={() => setConfirmingLogout(false)}
+        onConfirm={handleLogout}
+      />
+
       {/* Desktop rail */}
       <aside
         className={`hidden md:flex flex-col justify-between border-r border-border bg-card transition-[width] duration-200
@@ -94,7 +106,7 @@ export default function Sidebar({ collapsed, onToggleCollapse, mobileOpen, onClo
           </button>
 
           <button
-            onClick={handleLogout}
+            onClick={() => setConfirmingLogout(true)}
             className={`flex w-full items-center gap-2 rounded-lg bg-destructive/10 px-3 py-2.5 text-sm font-medium text-destructive hover:bg-destructive/20 transition-colors
               ${collapsed ? "justify-center" : ""}`}
           >
@@ -139,7 +151,7 @@ export default function Sidebar({ collapsed, onToggleCollapse, mobileOpen, onClo
               </div>
 
               <button
-                onClick={handleLogout}
+                onClick={() => setConfirmingLogout(true)}
                 className="flex w-full items-center gap-2 rounded-lg bg-destructive/10 px-3 py-2.5 text-sm font-medium text-destructive hover:bg-destructive/20 transition-colors"
               >
                 <LogOut className="h-4 w-4" />

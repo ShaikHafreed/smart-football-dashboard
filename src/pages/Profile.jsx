@@ -1,9 +1,10 @@
 import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { motion } from "framer-motion";
-import { Camera, Loader2, LogOut, Pencil, Users, Zap, Calendar } from "lucide-react";
+import { Camera, Loader2, LogOut, Pencil, Users, Zap, Calendar, User, ClipboardList } from "lucide-react";
 import { supabase } from "../lib/supabaseClient";
 import { useAuth } from "../lib/AuthContext";
+import ConfirmDialog from "../components/ConfirmDialog";
 
 export default function Profile() {
   const navigate = useNavigate();
@@ -13,6 +14,7 @@ export default function Profile() {
   const [loadError, setLoadError] = useState("");
   const [editMode, setEditMode] = useState(false);
   const [saving, setSaving] = useState(false);
+  const [confirmingLogout, setConfirmingLogout] = useState(false);
 
   useEffect(() => {
     if (!user) return;
@@ -90,6 +92,7 @@ export default function Profile() {
         full_name: profile.full_name,
         dob: profile.dob,
         avatar_url: profile.avatar_url,
+        role: profile.role,
       })
       .eq("id", user.id);
 
@@ -209,6 +212,31 @@ export default function Profile() {
         </div>
 
         {editMode && (
+          <div>
+            <p className="text-xs text-muted-foreground">Role</p>
+            <div className="mt-1.5 grid grid-cols-2 gap-2">
+              {[
+                { value: "player", label: "Player", icon: User },
+                { value: "coach", label: "Coach", icon: ClipboardList },
+              ].map(({ value, label, icon: Icon }) => {
+                const selected = (profile.role || "player") === value;
+                return (
+                  <button
+                    key={value}
+                    type="button"
+                    onClick={() => setProfile({ ...profile, role: value })}
+                    className={`flex items-center justify-center gap-2 rounded-lg border py-2.5 text-sm font-medium transition-colors
+                      ${selected ? "border-primary/60 bg-primary/10 text-primary" : "border-border text-muted-foreground"}`}
+                  >
+                    <Icon className="h-3.5 w-3.5" /> {label}
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+        )}
+
+        {editMode && (
           <div className="flex gap-3 pt-2">
             <motion.button
               whileTap={{ scale: 0.97 }}
@@ -229,11 +257,20 @@ export default function Profile() {
       </div>
 
       <button
-        onClick={handleLogout}
+        onClick={() => setConfirmingLogout(true)}
         className="flex w-full items-center justify-center gap-2 rounded-lg bg-destructive/10 py-3 text-sm font-medium text-destructive transition-colors hover:bg-destructive/20"
       >
         <LogOut className="h-4 w-4" /> Logout
       </button>
+
+      <ConfirmDialog
+        open={confirmingLogout}
+        title="Log out?"
+        message="You'll need to log back in to see your dashboard, players and history."
+        confirmLabel="Log out"
+        onCancel={() => setConfirmingLogout(false)}
+        onConfirm={handleLogout}
+      />
     </div>
   );
 }

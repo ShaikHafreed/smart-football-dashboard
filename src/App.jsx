@@ -11,6 +11,7 @@ import ProtectedRoute from "./components/ProtectedRoute";
 import AppLayout from "./components/layout/AppLayout";
 import NameInput from "./pages/onboarding/NameInput";
 import DOBInput from "./pages/onboarding/DOBInput";
+import RoleSelect from "./pages/onboarding/RoleSelect";
 import { AuthProvider } from "./lib/AuthContext";
 
 /* 🚀 ROUTES */
@@ -36,6 +37,14 @@ export default function App() {
             element={
               <ProtectedRoute>
                 <DOBInput />
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/onboarding/role"
+            element={
+              <ProtectedRoute>
+                <RoleSelect />
               </ProtectedRoute>
             }
           />

@@ -18,7 +18,7 @@ export default function DOBInput() {
     await supabase.from("football_profiles").update({ dob }).eq("id", user.id);
     setSaving(false);
 
-    navigate("/dashboard");
+    navigate("/onboarding/role");
   };
 
   return (
