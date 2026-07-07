@@ -8,6 +8,7 @@ import { UserPlus, Trash2, CheckCircle2, Users, Loader2 } from "lucide-react";
 import { supabase } from "../lib/supabaseClient";
 import { useAuth } from "../lib/AuthContext";
 import PlayerDetailModal from "../components/players/PlayerDetailModal";
+import ChartErrorBoundary from "../components/ChartErrorBoundary";
 
 const PIE_COLORS = ["hsl(82,100%,64%)", "hsl(217,91%,60%)", "hsl(38,100%,64%)", "hsl(280,70%,65%)", "hsl(0,84%,65%)"];
 
@@ -184,38 +185,42 @@ export default function CoachDashboard() {
         <div className="rounded-2xl border border-border bg-card p-6">
           <h2 className="font-display text-sm font-semibold">Session Attendance</h2>
           <div className="mt-2 h-56">
-            {attendanceData.length === 0 ? (
-              <p className="flex h-full items-center justify-center text-sm text-muted-foreground">No sessions recorded yet.</p>
-            ) : (
-              <ResponsiveContainer width="100%" height="100%">
-                <PieChart>
-                  <Pie data={attendanceData} dataKey="value" nameKey="name" innerRadius={45} outerRadius={75} paddingAngle={2}>
-                    {attendanceData.map((_, i) => <Cell key={i} fill={PIE_COLORS[i % PIE_COLORS.length]} />)}
-                  </Pie>
-                  <Tooltip contentStyle={{ background: "hsl(var(--card))", border: "1px solid hsl(var(--border))", borderRadius: 8, fontSize: 12 }} />
-                  <Legend wrapperStyle={{ fontSize: 12 }} />
-                </PieChart>
-              </ResponsiveContainer>
-            )}
+            <ChartErrorBoundary>
+              {attendanceData.length === 0 ? (
+                <p className="flex h-full items-center justify-center text-sm text-muted-foreground">No sessions recorded yet.</p>
+              ) : (
+                <ResponsiveContainer width="100%" height="100%" minWidth={0} minHeight={0}>
+                  <PieChart>
+                    <Pie data={attendanceData} dataKey="value" nameKey="name" innerRadius={45} outerRadius={75} paddingAngle={2} isAnimationActive={false}>
+                      {attendanceData.map((_, i) => <Cell key={i} fill={PIE_COLORS[i % PIE_COLORS.length]} />)}
+                    </Pie>
+                    <Tooltip contentStyle={{ background: "hsl(var(--card))", border: "1px solid hsl(var(--border))", borderRadius: 8, fontSize: 12 }} />
+                    <Legend wrapperStyle={{ fontSize: 12 }} />
+                  </PieChart>
+                </ResponsiveContainer>
+              )}
+            </ChartErrorBoundary>
           </div>
         </div>
 
         <div className="rounded-2xl border border-border bg-card p-6">
           <h2 className="font-display text-sm font-semibold">Shot Type Distribution</h2>
           <div className="mt-2 h-56">
-            {shotTypeData.length === 0 ? (
-              <p className="flex h-full items-center justify-center text-sm text-muted-foreground">No shots recorded yet.</p>
-            ) : (
-              <ResponsiveContainer width="100%" height="100%">
-                <PieChart>
-                  <Pie data={shotTypeData} dataKey="value" nameKey="name" innerRadius={45} outerRadius={75} paddingAngle={2}>
-                    {shotTypeData.map((_, i) => <Cell key={i} fill={PIE_COLORS[i % PIE_COLORS.length]} />)}
-                  </Pie>
-                  <Tooltip contentStyle={{ background: "hsl(var(--card))", border: "1px solid hsl(var(--border))", borderRadius: 8, fontSize: 12 }} />
-                  <Legend wrapperStyle={{ fontSize: 12 }} />
-                </PieChart>
-              </ResponsiveContainer>
-            )}
+            <ChartErrorBoundary>
+              {shotTypeData.length === 0 ? (
+                <p className="flex h-full items-center justify-center text-sm text-muted-foreground">No shots recorded yet.</p>
+              ) : (
+                <ResponsiveContainer width="100%" height="100%" minWidth={0} minHeight={0}>
+                  <PieChart>
+                    <Pie data={shotTypeData} dataKey="value" nameKey="name" innerRadius={45} outerRadius={75} paddingAngle={2} isAnimationActive={false}>
+                      {shotTypeData.map((_, i) => <Cell key={i} fill={PIE_COLORS[i % PIE_COLORS.length]} />)}
+                    </Pie>
+                    <Tooltip contentStyle={{ background: "hsl(var(--card))", border: "1px solid hsl(var(--border))", borderRadius: 8, fontSize: 12 }} />
+                    <Legend wrapperStyle={{ fontSize: 12 }} />
+                  </PieChart>
+                </ResponsiveContainer>
+              )}
+            </ChartErrorBoundary>
           </div>
         </div>
       </div>
@@ -223,21 +228,23 @@ export default function CoachDashboard() {
       <div className="rounded-2xl border border-border bg-card p-6">
         <h2 className="font-display text-sm font-semibold">Team Speed &amp; Spin Trend</h2>
         <div className="mt-2 h-64">
-          {trendData.length === 0 ? (
-            <p className="flex h-full items-center justify-center text-sm text-muted-foreground">Not enough data yet.</p>
-          ) : (
-            <ResponsiveContainer width="100%" height="100%">
-              <LineChart data={trendData}>
-                <CartesianGrid strokeDasharray="3 3" stroke="hsl(155,16%,18%)" />
-                <XAxis dataKey="day" tick={{ fontSize: 11 }} stroke="hsl(155,10%,55%)" />
-                <YAxis tick={{ fontSize: 11 }} stroke="hsl(155,10%,55%)" />
-                <Tooltip contentStyle={{ background: "hsl(var(--card))", border: "1px solid hsl(var(--border))", borderRadius: 8, fontSize: 12 }} />
-                <Legend wrapperStyle={{ fontSize: 12 }} />
-                <Line type="monotone" dataKey="avgSpeed" name="Avg Speed" stroke="hsl(82,100%,64%)" strokeWidth={2.5} dot={false} />
-                <Line type="monotone" dataKey="avgSpin" name="Avg Spin" stroke="hsl(217,91%,60%)" strokeWidth={2.5} dot={false} />
-              </LineChart>
-            </ResponsiveContainer>
-          )}
+          <ChartErrorBoundary>
+            {trendData.length === 0 ? (
+              <p className="flex h-full items-center justify-center text-sm text-muted-foreground">Not enough data yet.</p>
+            ) : (
+              <ResponsiveContainer width="100%" height="100%" minWidth={0} minHeight={0}>
+                <LineChart data={trendData}>
+                  <CartesianGrid strokeDasharray="3 3" stroke="hsl(155,16%,18%)" />
+                  <XAxis dataKey="day" tick={{ fontSize: 11 }} stroke="hsl(155,10%,55%)" />
+                  <YAxis tick={{ fontSize: 11 }} stroke="hsl(155,10%,55%)" />
+                  <Tooltip contentStyle={{ background: "hsl(var(--card))", border: "1px solid hsl(var(--border))", borderRadius: 8, fontSize: 12 }} />
+                  <Legend wrapperStyle={{ fontSize: 12 }} />
+                  <Line type="monotone" dataKey="avgSpeed" name="Avg Speed" stroke="hsl(82,100%,64%)" strokeWidth={2.5} dot={false} isAnimationActive={false} />
+                  <Line type="monotone" dataKey="avgSpin" name="Avg Spin" stroke="hsl(217,91%,60%)" strokeWidth={2.5} dot={false} isAnimationActive={false} />
+                </LineChart>
+              </ResponsiveContainer>
+            )}
+          </ChartErrorBoundary>
         </div>
       </div>
 

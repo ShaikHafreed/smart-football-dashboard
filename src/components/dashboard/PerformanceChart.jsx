@@ -3,6 +3,7 @@ import { motion } from "framer-motion";
 import {
   AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Legend,
 } from "recharts";
+import ChartErrorBoundary from "../ChartErrorBoundary";
 
 const TABS = ["Force", "Speed", "Spin"];
 
@@ -75,29 +76,32 @@ export default function PerformanceChart({ history = [] }) {
             <p className="text-sm">Waiting for sensor data…</p>
           </div>
         ) : (
-          <ResponsiveContainer width="100%" height="100%">
-            <AreaChart data={chartData}>
-              <defs>
-                <linearGradient id={gradId} x1="0" y1="0" x2="0" y2="1">
-                  <stop offset="5%" stopColor={color} stopOpacity={0.18} />
-                  <stop offset="95%" stopColor={color} stopOpacity={0} />
-                </linearGradient>
-              </defs>
-              <CartesianGrid strokeDasharray="3 3" stroke="hsl(220,13%,91%)" />
-              <XAxis dataKey="time" tick={{ fontSize: 11 }} stroke="hsl(220,10%,70%)" interval="preserveStartEnd" />
-              <YAxis tick={{ fontSize: 11 }} stroke="hsl(220,10%,70%)" />
-              <Tooltip content={<CustomTooltip />} />
-              <Area
-                type="monotone"
-                dataKey={dataKey}
-                stroke={color}
-                fill={`url(#${gradId})`}
-                strokeWidth={2.5}
-                dot={false}
-                activeDot={{ r: 5, fill: color }}
-              />
-            </AreaChart>
-          </ResponsiveContainer>
+          <ChartErrorBoundary>
+            <ResponsiveContainer width="100%" height="100%" minWidth={0} minHeight={0}>
+              <AreaChart data={chartData}>
+                <defs>
+                  <linearGradient id={gradId} x1="0" y1="0" x2="0" y2="1">
+                    <stop offset="5%" stopColor={color} stopOpacity={0.18} />
+                    <stop offset="95%" stopColor={color} stopOpacity={0} />
+                  </linearGradient>
+                </defs>
+                <CartesianGrid strokeDasharray="3 3" stroke="hsl(220,13%,91%)" />
+                <XAxis dataKey="time" tick={{ fontSize: 11 }} stroke="hsl(220,10%,70%)" interval="preserveStartEnd" />
+                <YAxis tick={{ fontSize: 11 }} stroke="hsl(220,10%,70%)" />
+                <Tooltip content={<CustomTooltip />} />
+                <Area
+                  type="monotone"
+                  dataKey={dataKey}
+                  stroke={color}
+                  fill={`url(#${gradId})`}
+                  strokeWidth={2.5}
+                  dot={false}
+                  activeDot={{ r: 5, fill: color }}
+                  isAnimationActive={false}
+                />
+              </AreaChart>
+            </ResponsiveContainer>
+          </ChartErrorBoundary>
         )}
       </div>
     </motion.div>
