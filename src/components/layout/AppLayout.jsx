@@ -7,6 +7,7 @@ const TITLES = {
   "/leaderboard": "Leaderboard",
   "/dashboard": "Smart Analytics",
   "/players": "Players",
+  "/analytics": "My Performance",
   "/session": "Session",
   "/history": "Shot History",
   "/profile": "Profile",

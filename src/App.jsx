@@ -3,6 +3,7 @@ import { BrowserRouter, Routes, Route, Navigate } from "react-router-dom";
 import Login from "./pages/Login";
 import Dashboard from "./pages/Dashboard";
 import Players from "./pages/Players";
+import PlayerAnalytics from "./pages/PlayerAnalytics";
 import Session from "./pages/Session";
 import History from "./pages/History";
 import Profile from "./pages/Profile";
@@ -60,6 +61,7 @@ export default function App() {
             <Route path="/leaderboard" element={<Leaderboard />} />
             <Route path="/dashboard" element={<Dashboard />} />
             <Route path="/players" element={<Players />} />
+            <Route path="/analytics" element={<PlayerAnalytics />} />
             <Route path="/session" element={<Session />} />
             <Route path="/history" element={<History />} />
             <Route path="/profile" element={<Profile />} />

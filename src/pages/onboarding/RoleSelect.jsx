@@ -24,15 +24,21 @@ export default function RoleSelect() {
   const [role, setRole] = useState("player");
   const [saving, setSaving] = useState(false);
   const navigate = useNavigate();
-  const { user } = useAuth();
+  const { user, refreshProfile, ensureSelfPlayer } = useAuth();
 
   const handleContinue = async () => {
     if (!user) return;
 
     setSaving(true);
     await supabase.from("football_profiles").update({ role }).eq("id", user.id);
-    setSaving(false);
+    await refreshProfile();
 
+    if (role === "player") {
+      const selfPlayerId = await ensureSelfPlayer();
+      if (selfPlayerId) localStorage.setItem("activePlayerId", selfPlayerId);
+    }
+
+    setSaving(false);
     navigate("/dashboard");
   };
 

@@ -11,11 +11,12 @@ import {
   Menu,
   X,
   LogOut,
+  LineChart,
 } from "lucide-react";
 import { useAuth } from "../../lib/AuthContext";
 import ConfirmDialog from "../ConfirmDialog";
 
-const MENU = [
+const COACH_MENU = [
   { name: "Leaderboard", path: "/leaderboard", icon: Trophy },
   { name: "Dashboard", path: "/dashboard", icon: LayoutDashboard },
   { name: "Players", path: "/players", icon: Users },
@@ -24,10 +25,20 @@ const MENU = [
   { name: "Profile", path: "/profile", icon: Settings },
 ];
 
-function NavItems({ collapsed, onNavigate }) {
+const PLAYER_MENU = [
+  { name: "Leaderboard", path: "/leaderboard", icon: Trophy },
+  { name: "Dashboard", path: "/dashboard", icon: LayoutDashboard },
+  { name: "My Performance", path: "/analytics", icon: LineChart },
+  { name: "Session", path: "/session", icon: Zap },
+  { name: "History", path: "/history", icon: HistoryIcon },
+  { name: "Profile", path: "/profile", icon: Settings },
+];
+
+function NavItems({ collapsed, onNavigate, role }) {
+  const menu = role === "coach" ? COACH_MENU : PLAYER_MENU;
   return (
     <nav className="space-y-1">
-      {MENU.map((item) => {
+      {menu.map((item) => {
         const Icon = item.icon;
         return (
           <NavLink
@@ -59,7 +70,7 @@ function NavItems({ collapsed, onNavigate }) {
 }
 
 export default function Sidebar({ collapsed, onToggleCollapse, mobileOpen, onCloseMobile }) {
-  const { signOut } = useAuth();
+  const { signOut, role } = useAuth();
   const [confirmingLogout, setConfirmingLogout] = useState(false);
 
   const handleLogout = async () => {
@@ -92,7 +103,7 @@ export default function Sidebar({ collapsed, onToggleCollapse, mobileOpen, onClo
           </div>
 
           <div className="px-3">
-            <NavItems collapsed={collapsed} />
+            <NavItems collapsed={collapsed} role={role} />
           </div>
         </div>
 
@@ -147,7 +158,7 @@ export default function Sidebar({ collapsed, onToggleCollapse, mobileOpen, onClo
                     <X className="h-5 w-5" />
                   </button>
                 </div>
-                <NavItems collapsed={false} onNavigate={onCloseMobile} />
+                <NavItems collapsed={false} onNavigate={onCloseMobile} role={role} />
               </div>
 
               <button

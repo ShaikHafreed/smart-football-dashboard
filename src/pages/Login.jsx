@@ -9,7 +9,7 @@ export default function Login() {
   const { signIn, signUp } = useAuth();
 
   const [mode, setMode] = useState("login"); // "login" | "signup"
-  const [email, setEmail] = useState("");
+  const [email, setEmail] = useState(() => localStorage.getItem("lastEmail") || "");
   const [password, setPassword] = useState("");
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
@@ -28,6 +28,10 @@ export default function Login() {
       setError(authError.message);
       return;
     }
+
+    // Remembered locally so the email is pre-filled next time — never the password.
+    // The password itself is offered by the browser's own credential manager via autoComplete below.
+    localStorage.setItem("lastEmail", email);
 
     navigate(mode === "signup" ? "/onboarding/name" : "/dashboard");
   };
@@ -111,6 +115,9 @@ export default function Login() {
                   <Mail className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
                   <input
                     type="email"
+                    name="email"
+                    id="email"
+                    autoComplete="email"
                     placeholder="Email"
                     className="w-full rounded-lg border border-border bg-secondary/40 py-3 pl-10 pr-3 text-sm outline-none transition-colors focus:border-primary"
                     value={email}
@@ -123,6 +130,9 @@ export default function Login() {
                   <Lock className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
                   <input
                     type="password"
+                    name="password"
+                    id="password"
+                    autoComplete={mode === "login" ? "current-password" : "new-password"}
                     placeholder="Password (min 6 characters)"
                     className="w-full rounded-lg border border-border bg-secondary/40 py-3 pl-10 pr-3 text-sm outline-none transition-colors focus:border-primary"
                     value={password}

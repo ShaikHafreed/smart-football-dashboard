@@ -8,57 +8,42 @@ import ConfirmDialog from "../components/ConfirmDialog";
 
 export default function Profile() {
   const navigate = useNavigate();
-  const { user, signOut } = useAuth();
-  const [profile, setProfile] = useState(null);
+  const { user, profile: authProfile, refreshProfile, ensureSelfPlayer, signOut } = useAuth();
+  const [profile, setProfile] = useState(authProfile);
   const [stats, setStats] = useState({ players: 0, shots: 0 });
-  const [loadError, setLoadError] = useState("");
   const [editMode, setEditMode] = useState(false);
   const [saving, setSaving] = useState(false);
   const [confirmingLogout, setConfirmingLogout] = useState(false);
 
   useEffect(() => {
+    setProfile(authProfile);
+  }, [authProfile]);
+
+  useEffect(() => {
     if (!user) return;
 
-    const load = async () => {
-      // .maybeSingle() (not .single()) so a missing row returns null
-      // instead of throwing and leaving the page stuck on "Loading…".
-      let { data, error } = await supabase
-        .from("football_profiles")
-        .select("*")
-        .eq("id", user.id)
-        .maybeSingle();
+    const loadStats = async () => {
+      try {
+        const { data: players } = await supabase
+          .from("football_players")
+          .select("id");
 
-      if (!data && !error) {
-        // Edge case: the auto-provision trigger hasn't landed yet — create it now.
-        const { data: created, error: upsertError } = await supabase
-          .from("football_profiles")
-          .upsert({ id: user.id })
-          .select()
-          .single();
+        const ids = (players || []).map((p) => p.id);
 
-        data = created;
-        error = upsertError;
+        const { count: shotCount } = ids.length
+          ? await supabase
+              .from("football_shots")
+              .select("id", { count: "exact", head: true })
+              .in("player_id", ids)
+          : { count: 0 };
+
+        setStats({ players: ids.length, shots: shotCount || 0 });
+      } catch (e) {
+        console.warn("Failed to load profile stats", e);
       }
-
-      if (error) {
-        setLoadError(error.message);
-        return;
-      }
-
-      setProfile(data);
-
-      const [{ count: playerCount }, { count: shotCount }] = await Promise.all([
-        supabase.from("football_players").select("id", { count: "exact", head: true }),
-        supabase
-          .from("football_shots")
-          .select("id, football_players!inner(user_id)", { count: "exact", head: true })
-          .eq("football_players.user_id", user.id),
-      ]);
-
-      setStats({ players: playerCount || 0, shots: shotCount || 0 });
     };
 
-    load();
+    loadStats();
   }, [user]);
 
   const calculateAge = (dob) => {
@@ -96,6 +81,13 @@ export default function Profile() {
       })
       .eq("id", user.id);
 
+    await refreshProfile();
+
+    if (profile.role === "player" && !localStorage.getItem("activePlayerId")) {
+      const selfPlayerId = await ensureSelfPlayer();
+      if (selfPlayerId) localStorage.setItem("activePlayerId", selfPlayerId);
+    }
+
     setSaving(false);
     setEditMode(false);
   };
@@ -104,14 +96,6 @@ export default function Profile() {
     await signOut();
     navigate("/login", { replace: true });
   };
-
-  if (loadError) {
-    return (
-      <div className="rounded-xl border border-destructive/30 bg-destructive/10 p-6 text-sm text-destructive">
-        Couldn't load your profile: {loadError}
-      </div>
-    );
-  }
 
   if (!profile) {
     return (
@@ -143,11 +127,11 @@ export default function Profile() {
 
           <div>
             <h1 className="font-display text-2xl font-semibold">
-              {profile.full_name || "Unnamed Coach"}
+              {profile.full_name || "Unnamed"}
             </h1>
             <p className="text-sm text-muted-foreground">{user?.email}</p>
             <span className="mt-2 inline-block rounded-full bg-secondary px-3 py-1 text-xs font-medium capitalize text-muted-foreground">
-              {profile.role || "coach"}
+              {profile.role || "player"}
             </span>
           </div>
         </div>

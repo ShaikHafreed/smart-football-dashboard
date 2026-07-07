@@ -7,7 +7,7 @@ import { useAuth } from "../lib/AuthContext";
 const FLASK = "http://127.0.0.1:5000";
 
 export default function Session() {
-  const { user } = useAuth();
+  const { user, role, ensureSelfPlayer } = useAuth();
   const [running, setRunning] = useState(false);
   const [time, setTime] = useState(0);
   const [activePlayer, setActivePlayer] = useState(null);
@@ -15,16 +15,30 @@ export default function Session() {
   const sessionIdRef = useRef(null);
 
   useEffect(() => {
-    const id = localStorage.getItem("activePlayerId");
-    if (!id) return;
+    if (!user) return;
 
-    supabase
-      .from("football_players")
-      .select("id, name")
-      .eq("id", id)
-      .single()
-      .then(({ data }) => setActivePlayer(data || null));
-  }, []);
+    const resolveActivePlayer = async () => {
+      let id = localStorage.getItem("activePlayerId");
+
+      // Players don't have a roster page to pick from — track themselves.
+      if (!id && role === "player") {
+        id = await ensureSelfPlayer();
+        if (id) localStorage.setItem("activePlayerId", id);
+      }
+
+      if (!id) return;
+
+      const { data } = await supabase
+        .from("football_players")
+        .select("id, name")
+        .eq("id", id)
+        .single();
+
+      setActivePlayer(data || null);
+    };
+
+    resolveActivePlayer();
+  }, [user, role]);
 
   useEffect(() => {
     let interval;

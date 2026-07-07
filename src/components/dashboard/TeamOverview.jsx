@@ -2,11 +2,13 @@ import { useEffect, useState } from "react";
 import { motion } from "framer-motion";
 import { Users, Loader2 } from "lucide-react";
 import { supabase } from "../../lib/supabaseClient";
+import PlayerDetailModal from "../players/PlayerDetailModal";
 
 /** Coach-only: aggregated performance across every player on the roster. */
 export default function TeamOverview() {
   const [rows, setRows] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [detailPlayer, setDetailPlayer] = useState(null);
 
   useEffect(() => {
     const load = async () => {
@@ -20,6 +22,7 @@ export default function TeamOverview() {
         .select("speed, force, created_at, player_id");
 
       const byPlayer = new Map((players || []).map((p) => [p.id, {
+        id: p.id,
         name: p.name,
         bestScore: 0,
         totalShots: 0,
@@ -65,12 +68,13 @@ export default function TeamOverview() {
       {!loading && rows.length > 0 && (
         <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
           {rows.map((r, i) => (
-            <motion.div
-              key={r.name + i}
+            <motion.button
+              key={r.id}
+              onClick={() => setDetailPlayer(r)}
               initial={{ opacity: 0, y: 6 }}
               animate={{ opacity: 1, y: 0 }}
               transition={{ delay: Math.min(i * 0.03, 0.3) }}
-              className="rounded-xl border border-border bg-secondary/30 p-4"
+              className="rounded-xl border border-border bg-secondary/30 p-4 text-left transition-colors hover:border-primary/40"
             >
               <p className="font-medium">{r.name}</p>
               <div className="mt-2 flex items-baseline gap-1.5">
@@ -81,10 +85,12 @@ export default function TeamOverview() {
                 {r.totalShots} shot{r.totalShots === 1 ? "" : "s"}
                 {r.lastShotAt && ` · last ${new Date(r.lastShotAt).toLocaleDateString()}`}
               </p>
-            </motion.div>
+            </motion.button>
           ))}
         </div>
       )}
+
+      <PlayerDetailModal player={detailPlayer} onClose={() => setDetailPlayer(null)} />
     </div>
   );
 }
