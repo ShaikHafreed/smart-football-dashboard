@@ -52,23 +52,37 @@ export default function CoachDashboard() {
   }, [user]);
 
   const addPlayer = async () => {
-    if (!name.trim() || !user || adding) return;
+    if (adding) return;
+
+    if (!name.trim()) {
+      setAddError("Type a player name first.");
+      return;
+    }
+
+    if (!user) {
+      setAddError("You're not signed in — try reloading the page.");
+      return;
+    }
 
     setAdding(true);
     setAddError("");
 
-    const { error } = await supabase.from("football_players").insert({ name: name.trim(), user_id: user.id });
+    try {
+      const { error } = await supabase.from("football_players").insert({ name: name.trim(), user_id: user.id });
 
-    setAdding(false);
+      if (error) throw error;
 
-    if (error) {
-      console.error("Failed to add player:", error);
-      setAddError(error.message);
-      return;
+      setName("");
+      await loadAll();
+    } catch (err) {
+      // Covers both a Postgres/RLS error object and a thrown network/CORS
+      // failure (e.g. a blocked request) — either way this must not leave
+      // the button stuck silently disabled with no explanation.
+      console.error("Failed to add player:", err);
+      setAddError(err?.message || "Couldn't add the player — check your connection and try again.");
+    } finally {
+      setAdding(false);
     }
-
-    setName("");
-    await loadAll();
   };
 
   const deletePlayer = async (id) => {
@@ -161,7 +175,7 @@ export default function CoachDashboard() {
           <motion.button
             whileTap={{ scale: 0.96 }}
             onClick={addPlayer}
-            disabled={adding || !name.trim()}
+            disabled={adding}
             className="flex items-center gap-2 rounded-lg bg-primary px-4 py-2.5 text-sm font-semibold text-primary-foreground disabled:opacity-50"
           >
             {adding ? <Loader2 className="h-4 w-4 animate-spin" /> : <UserPlus className="h-4 w-4" />} Add
