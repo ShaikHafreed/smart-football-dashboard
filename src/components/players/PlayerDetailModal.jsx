@@ -1,16 +1,20 @@
 import { useEffect, useState } from "react";
 import { AnimatePresence, motion } from "framer-motion";
-import { X, Gauge, RotateCw, Zap, Ruler, Loader2 } from "lucide-react";
+import { X, Gauge, RotateCw, Zap, Ruler, Loader2, Pencil, Camera } from "lucide-react";
 import { supabase } from "../../lib/supabaseClient";
-import PerformanceChart from "../dashboard/PerformanceChart";
+import SessionList from "../performance/SessionList";
 
-export default function PlayerDetailModal({ player, onClose }) {
+export default function PlayerDetailModal({ player, onClose, onUpdated }) {
   const [shots, setShots] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [editMode, setEditMode] = useState(false);
+  const [fields, setFields] = useState({ dob: "", avatar_url: "" });
+  const [saving, setSaving] = useState(false);
 
   useEffect(() => {
     if (!player) return;
     setLoading(true);
+    setFields({ dob: player.dob || "", avatar_url: player.avatar_url || "" });
 
     supabase
       .from("football_shots")
@@ -33,12 +37,21 @@ export default function PlayerDetailModal({ player, onClose }) {
     { speed: 0, spin: 0, force: 0, distance: 0 }
   );
 
-  const history = shots.slice(-15).map((s) => ({
-    time: new Date(s.created_at).toLocaleTimeString([], { minute: "2-digit", second: "2-digit" }),
-    kickForce: s.force,
-    ballSpeed: s.speed,
-    spinRate: s.spin,
-  }));
+  const handleImageUpload = (e) => {
+    const file = e.target.files[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onloadend = () => setFields((f) => ({ ...f, avatar_url: reader.result }));
+    reader.readAsDataURL(file);
+  };
+
+  const handleSave = async () => {
+    setSaving(true);
+    await supabase.from("football_players").update(fields).eq("id", player.id);
+    setSaving(false);
+    setEditMode(false);
+    onUpdated?.();
+  };
 
   return (
     <AnimatePresence>
@@ -59,20 +72,61 @@ export default function PlayerDetailModal({ player, onClose }) {
             className="fixed inset-x-0 bottom-0 z-[61] max-h-[85vh] overflow-y-auto rounded-t-2xl border-t border-border bg-card p-6 sm:inset-x-auto sm:left-1/2 sm:top-1/2 sm:w-full sm:max-w-2xl sm:-translate-x-1/2 sm:-translate-y-1/2 sm:rounded-2xl sm:border"
           >
             <div className="mb-4 flex items-center justify-between">
-              <h2 className="font-display text-xl font-semibold">{player.name}</h2>
-              <button onClick={onClose} className="rounded-lg p-1.5 text-muted-foreground hover:bg-secondary/60">
-                <X className="h-5 w-5" />
-              </button>
+              <div className="flex items-center gap-3">
+                <div className="relative">
+                  <img
+                    src={fields.avatar_url || `https://api.dicebear.com/9.x/initials/svg?seed=${encodeURIComponent(player.name)}`}
+                    alt={player.name}
+                    className="h-12 w-12 rounded-full border border-primary/30 object-cover"
+                  />
+                  {editMode && (
+                    <label className="absolute -bottom-1 -right-1 flex h-6 w-6 cursor-pointer items-center justify-center rounded-full bg-primary text-primary-foreground">
+                      <Camera className="h-3 w-3" />
+                      <input type="file" accept="image/*" className="hidden" onChange={handleImageUpload} />
+                    </label>
+                  )}
+                </div>
+                <div>
+                  <h2 className="font-display text-xl font-semibold">{player.name}</h2>
+                  {editMode ? (
+                    <input
+                      type="date"
+                      value={fields.dob}
+                      onChange={(e) => setFields((f) => ({ ...f, dob: e.target.value }))}
+                      className="mt-0.5 rounded border border-border bg-secondary/40 px-2 py-1 text-xs"
+                    />
+                  ) : (
+                    <p className="text-xs text-muted-foreground">{player.dob || "No DOB set"}</p>
+                  )}
+                </div>
+              </div>
+
+              <div className="flex items-center gap-2">
+                {editMode ? (
+                  <button
+                    onClick={handleSave}
+                    disabled={saving}
+                    className="rounded-lg bg-primary px-3 py-1.5 text-xs font-semibold text-primary-foreground disabled:opacity-50"
+                  >
+                    {saving ? "Saving…" : "Save"}
+                  </button>
+                ) : (
+                  <button onClick={() => setEditMode(true)} className="rounded-lg p-1.5 text-muted-foreground hover:bg-secondary/60">
+                    <Pencil className="h-4 w-4" />
+                  </button>
+                )}
+                <button onClick={onClose} className="rounded-lg p-1.5 text-muted-foreground hover:bg-secondary/60">
+                  <X className="h-5 w-5" />
+                </button>
+              </div>
             </div>
 
             {loading ? (
               <div className="flex items-center justify-center gap-2 py-10 text-muted-foreground">
                 <Loader2 className="h-4 w-4 animate-spin" /> Loading…
               </div>
-            ) : shots.length === 0 ? (
-              <p className="py-10 text-center text-sm text-muted-foreground">No shots recorded for this player yet.</p>
             ) : (
-              <div className="space-y-4">
+              <div className="space-y-5">
                 <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
                   {[
                     { label: "Speed", value: bests.speed, unit: "km/h", icon: Gauge, color: "text-primary" },
@@ -83,21 +137,14 @@ export default function PlayerDetailModal({ player, onClose }) {
                     <div key={label} className="rounded-xl border border-border bg-secondary/30 p-3 text-center">
                       <Icon className={`mx-auto h-4 w-4 ${color}`} />
                       <p className="font-data mt-1 text-lg font-semibold">{value}</p>
-                      <p className="text-[11px] text-muted-foreground">{label} ({unit})</p>
+                      <p className="text-[11px] text-muted-foreground">Best {label} ({unit})</p>
                     </div>
                   ))}
                 </div>
 
-                <PerformanceChart history={history} />
-
-                <div className="space-y-1.5">
-                  <p className="text-xs font-medium text-muted-foreground">Recent shots</p>
-                  {shots.slice(-8).reverse().map((s, i) => (
-                    <div key={i} className="flex justify-between rounded-lg bg-secondary/30 px-3 py-2 text-xs">
-                      <span>{s.speed} km/h · {s.spin} rpm · {s.force} N</span>
-                      <span className="text-muted-foreground">{new Date(s.created_at).toLocaleString()}</span>
-                    </div>
-                  ))}
+                <div>
+                  <p className="mb-2 text-xs font-medium text-muted-foreground">Performance by Session</p>
+                  <SessionList playerIds={[player.id]} />
                 </div>
               </div>
             )}

@@ -5,8 +5,7 @@ import Sidebar from "./Sidebar";
 
 const TITLES = {
   "/leaderboard": "Leaderboard",
-  "/dashboard": "Smart Analytics",
-  "/players": "Players",
+  "/dashboard": "Dashboard",
   "/analytics": "My Performance",
   "/session": "Session",
   "/history": "Shot History",

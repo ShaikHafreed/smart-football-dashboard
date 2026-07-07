@@ -4,6 +4,7 @@ import { Gauge, RotateCw, Zap, Ruler, ListChecks, Loader2 } from "lucide-react";
 import { supabase } from "../lib/supabaseClient";
 import { useAuth } from "../lib/AuthContext";
 import PerformanceChart from "../components/dashboard/PerformanceChart";
+import SessionList from "../components/performance/SessionList";
 import { classifyForce } from "../utils/sensorUtils";
 
 const DRILL_LIBRARY = {
@@ -27,6 +28,7 @@ const DRILL_LIBRARY = {
 export default function PlayerAnalytics() {
   const { user, ensureSelfPlayer } = useAuth();
   const [shots, setShots] = useState([]);
+  const [playerIds, setPlayerIds] = useState([]);
   const [loading, setLoading] = useState(true);
   const [checked, setChecked] = useState(() => {
     try {
@@ -48,6 +50,8 @@ export default function PlayerAnalytics() {
         .eq("user_id", user.id);
 
       const ids = (players || []).map((p) => p.id);
+      setPlayerIds(ids);
+
       if (ids.length === 0) {
         setLoading(false);
         return;
@@ -170,6 +174,12 @@ export default function PlayerAnalytics() {
                 </label>
               ))}
             </div>
+          </div>
+
+          {/* PERFORMANCE BY SESSION */}
+          <div>
+            <h2 className="font-display mb-3 text-sm font-semibold">Performance by Session</h2>
+            <SessionList playerIds={playerIds} />
           </div>
         </>
       )}

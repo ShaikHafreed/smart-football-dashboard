@@ -4,7 +4,6 @@ import { motion, AnimatePresence } from "framer-motion";
 import {
   Trophy,
   LayoutDashboard,
-  Users,
   Zap,
   History as HistoryIcon,
   Settings,
@@ -16,10 +15,11 @@ import {
 import { useAuth } from "../../lib/AuthContext";
 import ConfirmDialog from "../ConfirmDialog";
 
+// Coaches manage their roster from inside the Coach Dashboard itself now,
+// so there's no separate "Players" nav entry.
 const COACH_MENU = [
   { name: "Leaderboard", path: "/leaderboard", icon: Trophy },
   { name: "Dashboard", path: "/dashboard", icon: LayoutDashboard },
-  { name: "Players", path: "/players", icon: Users },
   { name: "Session", path: "/session", icon: Zap },
   { name: "History", path: "/history", icon: HistoryIcon },
   { name: "Profile", path: "/profile", icon: Settings },

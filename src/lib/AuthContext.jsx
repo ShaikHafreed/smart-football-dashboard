@@ -56,6 +56,12 @@ export const AuthProvider = ({ children }) => {
   const signIn = (email, password) => supabase.auth.signInWithPassword({ email, password });
   const signOut = () => supabase.auth.signOut();
 
+  const signInWithGoogle = () =>
+    supabase.auth.signInWithOAuth({
+      provider: "google",
+      options: { redirectTo: `${window.location.origin}/auth/callback` },
+    });
+
   const refreshProfile = () => loadProfile(session?.user?.id);
 
   /** Player-role accounts track themselves as a player; make sure that row exists. */
@@ -93,6 +99,7 @@ export const AuthProvider = ({ children }) => {
         isLoadingAuth,
         signUp,
         signIn,
+        signInWithGoogle,
         signOut,
         refreshProfile,
         ensureSelfPlayer,

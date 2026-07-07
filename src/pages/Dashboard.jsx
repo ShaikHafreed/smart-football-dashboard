@@ -6,12 +6,8 @@ import ConnectionPanel from "../components/dashboard/ConnectionPanel";
 import PerformanceChart from "../components/dashboard/PerformanceChart";
 import FootballAnimation from "../components/dashboard/FootballAnimation";
 import StatsSummaryBar from "../components/dashboard/StatsSummaryBar";
-import TeamOverview from "../components/dashboard/TeamOverview";
-import { useAuth } from "../lib/AuthContext";
 
 export default function Dashboard() {
-
-  const { role } = useAuth();
 
   const [data, setData] = useState({
     speed: 0,
@@ -126,8 +122,6 @@ export default function Dashboard() {
 
   return (
     <div className="space-y-6 animate-fadeIn">
-
-      {role === "coach" && <TeamOverview />}
 
       {/* TITLE + SHOT BANNER */}
       <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
