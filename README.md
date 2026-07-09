@@ -2,7 +2,7 @@
 
 An IoT-powered football analytics platform. An ESP32 + MPU6050 sensor on the ball captures kick speed, spin, and force in real time; a web dashboard turns that into live telemetry, session history, and performance analytics for both players and coaches.
 
-**Live app:** https://smart-football-dashboard.vercel.app
+**Live app:** https://football.hafreedshaik.online (also reachable at https://smart-football-dashboard.vercel.app)
 
 ## Features
 
