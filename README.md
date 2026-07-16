@@ -69,6 +69,10 @@ backend/
   server.py             Flask relay: receives ESP32 readings, serves live data, persists shots
   serial_bridge.py       Optional: read sensor data over USB serial instead of Wi-Fi
   requirements.txt
+
+firmware/
+  smart_football/smart_football.ino   ESP32 sketch: MPU6050 + vibration-based kick
+                                       detection, push-button reset, error buzzer
 ```
 
 ## Getting started
@@ -96,6 +100,15 @@ python server.py
 ```
 
 The Flask server listens on `http://127.0.0.1:5000` and expects the ESP32 to `POST /api/data` with `{ speed, spin, force, distance, shot }` after each detected kick.
+
+### Hardware (ESP32)
+Flash `firmware/smart_football/smart_football.ino` from the Arduino IDE. Update `ssid`, `password`, and `serverIP` (the machine running `server.py`, not a public address) at the top of the file, and confirm these pins match your actual wiring:
+
+| Pin | Purpose |
+|---|---|
+| `VIB_PIN` (27) | Vibration sensor — signals a kick was detected |
+| `RESET_PIN` (26) | Push button (wired to GND) — restarts the board, clearing any error/buzzer state |
+| `BUZZER_PIN` (25) | Buzzer — sounds continuously on WiFi loss, MPU6050 init failure, or a failed send, until reset is pressed |
 
 ### Google sign-in
 Requires a Google OAuth Client ID/Secret enabled under **Authentication → Providers → Google** in your Supabase project, with the redirect URI `<your-supabase-url>/auth/v1/callback`.

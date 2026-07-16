@@ -77,31 +77,51 @@ def save_shot_to_supabase(reading):
 # ESP32 SENDS DATA HERE
 # ==========================================
 
-@app.route("/api/data", methods=["POST"])
-def receive_data():
+def _to_float(value, default=0):
+    try:
+        return float(value)
+    except (TypeError, ValueError):
+        return default
 
+
+def ingest_reading(data):
+    """Update the live reading + persist a real kick. `data` is any dict-like
+    (parsed JSON body or query args) with speed/spin/force/distance/shot."""
     global latest_data
     global last_update_time
 
+    latest_data = {
+        "speed": _to_float(data.get("speed", 0)),
+        "spin": _to_float(data.get("spin", 0)),
+        "force": _to_float(data.get("force", 0)),
+        "distance": _to_float(data.get("distance", 0)),
+        "shot": data.get("shot", "Kick Not Detected"),
+        "connected": True,
+    }
+
+    last_update_time = time.time()
+
+    if latest_data["shot"] != "Kick Not Detected":
+        save_shot_to_supabase(latest_data)
+
+
+# New firmware posts JSON here.
+@app.route("/api/data", methods=["POST"])
+def receive_data():
     try:
-        data = request.json
-
-        latest_data = {
-            "speed": data.get("speed", 0),
-            "spin": data.get("spin", 0),
-            "force": data.get("force", 0),
-            "distance": data.get("distance", 0),
-            "shot": data.get("shot", "Kick Not Detected"),
-            "connected": True,
-        }
-
-        last_update_time = time.time()
-
-        if latest_data["shot"] != "Kick Not Detected":
-            save_shot_to_supabase(latest_data)
-
+        ingest_reading(request.json or {})
         return jsonify({"message": "Data received successfully"}), 200
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
 
+
+# Old firmware sends a GET with query params here (/esp-data?speed=..&spin=..).
+# Kept so an already-flashed board works without re-uploading.
+@app.route("/esp-data", methods=["GET"])
+def receive_data_legacy():
+    try:
+        ingest_reading(request.args)
+        return jsonify({"message": "Data received successfully"}), 200
     except Exception as e:
         return jsonify({"error": str(e)}), 500
 
