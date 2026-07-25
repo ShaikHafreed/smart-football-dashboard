@@ -42,13 +42,49 @@ Earlier versions pointed the ESP32 at the Flask relay's local IP address, which 
 
 ## Tech stack
 
-| Layer | Tech |
-|---|---|
-| Frontend | React 19, Vite, Tailwind CSS, Framer Motion, Recharts, React Router v6 |
-| Backend (hardware relay) | Flask, Python |
-| Database / Auth | Supabase (Postgres, Row Level Security, Auth) |
-| Hardware | ESP32, MPU6050 (accelerometer + gyroscope) |
-| Hosting | Vercel (frontend), Render (backend relay) |
+### Frontend
+- **React 19** + **Vite** — UI and build tooling, with the React Compiler (`babel-plugin-react-compiler`) enabled for automatic memoization
+- **React Router v7** — client-side routing, including role-based route branching (Player vs. Coach)
+- **Tailwind CSS 3** — utility-first styling, with `class-variance-authority` / `tailwind-merge` for composable component variants
+- **Framer Motion** — page transitions, entrance animations, the live ball-impact pulse
+- **Recharts** — the live performance trend chart, session speed/spin history, and coach team-analytics pie/line charts
+- **@supabase/supabase-js** — auth, database queries, and realtime session/profile state (`src/lib/AuthContext.jsx`)
+- **lucide-react** — icon set
+- **date-fns** — date formatting (session timestamps, profile DOB/age)
+- **Radix UI primitives** (`@radix-ui/react-slot`) — accessible building blocks for the UI component layer
+
+### Backend (hardware relay)
+- **Flask** (Python) — receives ESP32 readings, serves the live `/data` polling endpoint, and relays detected kicks into Supabase
+- **Flask-CORS** — allows the browser frontend (any origin) to call the relay
+- **gunicorn** — production WSGI server used on Render (Flask's built-in dev server isn't used in production)
+- **python-dotenv** — loads `SUPABASE_URL` / `SUPABASE_SERVICE_ROLE_KEY` from `.env` locally
+- **requests** — forwards each detected shot to Supabase's REST API
+
+### Database & Auth
+- **Supabase** — hosted Postgres database, authentication, and instant REST API (PostgREST)
+  - **Auth**: email/password and Google OAuth sign-in
+  - **Row Level Security (RLS)** on every table — each account can only ever read or write its own rows
+  - Four tables: `football_profiles`, `football_players`, `football_sessions`, `football_shots` (see [Database](#database) below)
+
+### Hardware / Firmware
+- **ESP32** — Wi-Fi microcontroller running the onboard logic (`firmware/smart_football/smart_football.ino`)
+- **MPU6050** — 3-axis accelerometer + 3-axis gyroscope, read over I²C, used to compute speed/spin/force per kick
+- **Vibration sensor** — digital trigger that detects the instant of ball impact (kicks are only measured and sent on a real hit, not continuously)
+- **Push button** — full hardware reset (`ESP.restart()`), clearing any error state
+- **Buzzer** — sounds on Wi-Fi loss, MPU6050 init failure, or a failed upload, until reset is pressed
+- Arduino libraries: `WiFi.h`, `WiFiClientSecure.h` (HTTPS), `HTTPClient.h`, `Wire.h` (I²C), `MPU6050.h`
+
+### Hosting & infrastructure
+- **Vercel** — frontend hosting, deployed from this GitHub repo on every push to `main`
+- **Render** — public hosting for the Flask relay (`backend/render.yaml`), so the ESP32 can reach it over HTTPS from any Wi-Fi network with internet, not just one local network
+- **Supabase Cloud** — managed Postgres + Auth
+- **Custom domain** — `football.hafreedshaik.online`, DNS managed via Hostinger, pointed at Vercel
+- **GitHub** — source control and CI trigger for Vercel deploys
+
+### Tooling
+- **ESLint** — linting (`eslint.config.js`)
+- **Arduino IDE** — firmware development and flashing
+- **Git / GitHub** — version control
 
 ## Project structure
 
@@ -111,7 +147,7 @@ The Flask server listens on `http://127.0.0.1:5000` locally and expects the ESP3
 Render's free tier sleeps after 15 minutes idle and takes 30–50s to wake on the first request after that — the firmware's request timeout is set generously to accommodate this.
 
 ### Hardware (ESP32)
-Flash `firmware/smart_football/smart_football.ino` from the Arduino IDE. Update `ssid`, `password`, and `serverIP` (the machine running `server.py`, not a public address) at the top of the file, and confirm these pins match your actual wiring:
+Flash `firmware/smart_football/smart_football.ino` from the Arduino IDE. Update `ssid`, `password`, and `serverHost` (the deployed Render hostname — see above) at the top of the file, and confirm these pins match your actual wiring:
 
 | Pin | Purpose |
 |---|---|
