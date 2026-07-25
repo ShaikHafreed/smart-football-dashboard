@@ -70,8 +70,6 @@ Earlier versions pointed the ESP32 at the Flask relay's local IP address, which 
 - **ESP32** — Wi-Fi microcontroller running the onboard logic (`firmware/smart_football/smart_football.ino`)
 - **MPU6050** — 3-axis accelerometer + 3-axis gyroscope, read over I²C, used to compute speed/spin/force per kick
 - **Vibration sensor** — digital trigger that detects the instant of ball impact (kicks are only measured and sent on a real hit, not continuously)
-- **Push button** — full hardware reset (`ESP.restart()`), clearing any error state
-- **Buzzer** — sounds on Wi-Fi loss, MPU6050 init failure, or a failed upload, until reset is pressed
 - Arduino libraries: `WiFi.h`, `WiFiClientSecure.h` (HTTPS), `HTTPClient.h`, `Wire.h` (I²C), `MPU6050.h`
 
 ### Hosting & infrastructure
@@ -107,8 +105,7 @@ backend/
   requirements.txt
 
 firmware/
-  smart_football/smart_football.ino   ESP32 sketch: MPU6050 + vibration-based kick
-                                       detection, push-button reset, error buzzer
+  smart_football/smart_football.ino   ESP32 sketch: MPU6050 + vibration-based kick detection
 ```
 
 ## Getting started
@@ -152,8 +149,6 @@ Flash `firmware/smart_football/smart_football.ino` from the Arduino IDE. Update 
 | Pin | Purpose |
 |---|---|
 | `VIB_PIN` (27) | Vibration sensor — signals a kick was detected |
-| `RESET_PIN` (26) | Push button (wired to GND) — restarts the board, clearing any error/buzzer state |
-| `BUZZER_PIN` (25) | Buzzer — sounds continuously on WiFi loss, MPU6050 init failure, or a failed send, until reset is pressed |
 
 ### Google sign-in
 Requires a Google OAuth Client ID/Secret enabled under **Authentication → Providers → Google** in your Supabase project, with the redirect URI `<your-supabase-url>/auth/v1/callback`.
