@@ -6,6 +6,7 @@ import ConnectionPanel from "../components/dashboard/ConnectionPanel";
 import PerformanceChart from "../components/dashboard/PerformanceChart";
 import FootballAnimation from "../components/dashboard/FootballAnimation";
 import StatsSummaryBar from "../components/dashboard/StatsSummaryBar";
+import { FLASK_URL } from "../lib/flaskClient";
 
 export default function Dashboard() {
 
@@ -37,7 +38,7 @@ export default function Dashboard() {
       try {
 
         const response =
-          await fetch("http://127.0.0.1:5000/data");
+          await fetch(`${FLASK_URL}/data`);
 
         const result =
           await response.json();

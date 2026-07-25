@@ -3,8 +3,7 @@ import { motion } from "framer-motion";
 import { Play, Square, RotateCcw, User } from "lucide-react";
 import { supabase } from "../lib/supabaseClient";
 import { useAuth } from "../lib/AuthContext";
-
-const FLASK = "http://127.0.0.1:5000";
+import { FLASK_URL as FLASK } from "../lib/flaskClient";
 
 export default function Session() {
   const { user, role, ensureSelfPlayer } = useAuth();

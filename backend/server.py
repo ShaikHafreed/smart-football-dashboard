@@ -167,8 +167,13 @@ def stop_session():
 
 if __name__ == "__main__":
 
+    # Render (and most hosts) assign the port via $PORT — 5000 is only the
+    # local-dev fallback. Debug mode must default OFF: once this server is
+    # reachable from the public internet (not just localhost), Flask's
+    # debug mode exposes an interactive in-browser code executor to anyone
+    # who finds the URL. Set FLASK_DEBUG=1 locally if you want it back.
     app.run(
         host="0.0.0.0",
-        port=5000,
-        debug=True,
+        port=int(os.environ.get("PORT", 5000)),
+        debug=os.environ.get("FLASK_DEBUG") == "1",
     )

@@ -25,9 +25,9 @@ An IoT-powered football analytics platform. An ESP32 + MPU6050 sensor on the bal
 
 ```
 Football (ESP32 + MPU6050)
-        │  Wi-Fi, one HTTP POST per kick
+        │  Wi-Fi (any network with internet — HTTPS), one POST per kick
         ▼
-Flask backend (local, next to the hardware)
+Flask backend, deployed on Render
         │  GET /data  → polled every 1s for live dashboard cards
         │  POST /api/data → relayed into Supabase while a Session is active
         ▼
@@ -38,7 +38,7 @@ Supabase (Postgres + Auth)
 React (Vite) frontend, deployed on Vercel
 ```
 
-The Flask relay is deliberately local-only — it needs to be reachable by the ESP32 over the same Wi-Fi network, so it runs on whatever machine is near the hardware, not in the cloud. Everything else (auth, players, history, leaderboard, analytics) talks directly to Supabase and works anywhere, including the deployed site.
+Earlier versions pointed the ESP32 at the Flask relay's local IP address, which only worked when the ball and the laptop running Flask were on the *same* Wi-Fi network — a college, public, or different home network couldn't reach it (private IPs aren't routable across networks, and many public/campus Wi-Fi networks block device-to-device traffic outright). Deploying Flask publicly (see `backend/render.yaml`) removes that constraint: the ESP32 just needs internet access, from anywhere. The frontend's `VITE_FLASK_URL` should point at the same deployed URL — see `.env.example`.
 
 ## Tech stack
 
@@ -48,7 +48,7 @@ The Flask relay is deliberately local-only — it needs to be reachable by the E
 | Backend (hardware relay) | Flask, Python |
 | Database / Auth | Supabase (Postgres, Row Level Security, Auth) |
 | Hardware | ESP32, MPU6050 (accelerometer + gyroscope) |
-| Hosting | Vercel (frontend) |
+| Hosting | Vercel (frontend), Render (backend relay) |
 
 ## Project structure
 
@@ -99,7 +99,16 @@ cp .env.example .env         # fill in SUPABASE_URL + SUPABASE_SERVICE_ROLE_KEY
 python server.py
 ```
 
-The Flask server listens on `http://127.0.0.1:5000` and expects the ESP32 to `POST /api/data` with `{ speed, spin, force, distance, shot }` after each detected kick.
+The Flask server listens on `http://127.0.0.1:5000` locally and expects the ESP32 to `POST /api/data` with `{ speed, spin, force, distance, shot }` after each detected kick.
+
+### Deploying the backend (so it works on any Wi-Fi, not just one network)
+1. Push this repo to GitHub (already done if you're reading this from there).
+2. In the [Render dashboard](https://dashboard.render.com), **New → Blueprint**, connect the repo — it reads `backend/render.yaml` and configures the service automatically.
+3. Set the two environment variables it asks for (`SUPABASE_URL`, `SUPABASE_SERVICE_ROLE_KEY`) — same values as `backend/.env`.
+4. Deploy. Note the resulting URL (e.g. `https://smart-football-backend.onrender.com`).
+5. Put that host into `firmware/smart_football/smart_football.ino`'s `serverHost`, and into `VITE_FLASK_URL` (both locally in `.env.local` and as a Vercel environment variable for the deployed site).
+
+Render's free tier sleeps after 15 minutes idle and takes 30–50s to wake on the first request after that — the firmware's request timeout is set generously to accommodate this.
 
 ### Hardware (ESP32)
 Flash `firmware/smart_football/smart_football.ino` from the Arduino IDE. Update `ssid`, `password`, and `serverIP` (the machine running `server.py`, not a public address) at the top of the file, and confirm these pins match your actual wiring:

@@ -1,14 +1,25 @@
 #include <WiFi.h>
+#include <WiFiClientSecure.h>
 #include <HTTPClient.h>
 #include <Wire.h>
 #include <MPU6050.h>
 
 MPU6050 mpu;
 
-const char* ssid = "S22Ultra";
-const char* password = "hafreed@143";
+const char* ssid = "AirFiber-VZS0-SR";
+const char* password = "11223344";
 
-const char* serverIP = "10.199.158.205"; // CHANGE TO YOUR LAPTOP IP
+// Public backend host (no scheme, no trailing slash) — this is what makes
+// the ball work on ANY Wi-Fi with internet (college, public, mobile
+// hotspot), not just the one network its old local-IP address lived on.
+// Deploy backend/render.yaml on Render and put the resulting hostname here.
+const char* serverHost = "smart-football-backend.onrender.com";
+
+// Render's free tier serves HTTPS only, so we go over TLS. setInsecure()
+// skips certificate validation — acceptable for a prototype/demo talking to
+// a known host, but note this is not certificate-pinned; a proper
+// production device would validate against Render's CA instead.
+WiFiClientSecure secureClient;
 
 #define VIB_PIN    27
 #define RESET_PIN  26   // push button -> GND, uses internal pull-up. CHANGE if wired differently.
@@ -64,6 +75,8 @@ void setup() {
   pinMode(RESET_PIN, INPUT_PULLUP);
   pinMode(BUZZER_PIN, OUTPUT);
   setBuzzer(false);
+
+  secureClient.setInsecure();
 
   Wire.begin();
   mpu.initialize();
@@ -125,7 +138,7 @@ void loop() {
 
     HTTPClient http;
 
-    String url = String("http://") + serverIP + ":5000/api/data";
+    String url = String("https://") + serverHost + "/api/data";
 
     String payload =
       String("{\"speed\":") + String(speed, 2) +
@@ -134,8 +147,11 @@ void loop() {
       ",\"distance\":" + String(distance, 2) +
       ",\"shot\":\"kick\"}";
 
-    http.begin(url);
+    http.begin(secureClient, url);
     http.addHeader("Content-Type", "application/json");
+    // Render's free tier sleeps after 15 min idle and can take 30-50s to
+    // wake on the first request — give it real room instead of timing out.
+    http.setTimeout(60000);
 
     int responseCode = http.POST(payload);
 
