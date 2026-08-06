@@ -106,17 +106,20 @@ def authenticate_device(data):
     return device
 
 
-def touch_device(device_id, firmware_version=None, battery_pct=None, wifi_rssi=None):
-    """Update last-seen + optional health telemetry for a device. Best
-    effort -- a failed telemetry update should never block ingest."""
+def touch_device(device_id, firmware_version=None, battery_pct=None, wifi_rssi=None, reading=None):
+    """Update last-seen + optional health telemetry + the live sensor
+    snapshot for a device. Best effort -- a failed telemetry update
+    should never block ingest.
+
+    `reading`, when given, is written on EVERY call (not just real detected
+    kicks) so the football_devices row always reflects current state --
+    that's what the frontend subscribes to via Realtime instead of polling."""
     if not SUPABASE_URL or not SUPABASE_SERVICE_ROLE_KEY:
         return
 
-    patch = {"last_seen_at": "now()"}
-    # PostgREST doesn't evaluate now() from a JSON body -- send an actual
-    # ISO timestamp instead.
     from datetime import datetime, timezone
-    patch["last_seen_at"] = datetime.now(timezone.utc).isoformat()
+    now_iso = datetime.now(timezone.utc).isoformat()
+    patch = {"last_seen_at": now_iso}
 
     if firmware_version is not None:
         patch["firmware_version"] = firmware_version
@@ -124,6 +127,13 @@ def touch_device(device_id, firmware_version=None, battery_pct=None, wifi_rssi=N
         patch["battery_pct"] = battery_pct
     if wifi_rssi is not None:
         patch["wifi_rssi"] = wifi_rssi
+    if reading is not None:
+        patch["last_speed"] = reading.get("speed")
+        patch["last_spin"] = reading.get("spin")
+        patch["last_force"] = reading.get("force")
+        patch["last_distance"] = reading.get("distance")
+        patch["last_shot"] = reading.get("shot")
+        patch["last_reading_at"] = now_iso
 
     try:
         requests.patch(
@@ -219,7 +229,9 @@ def save_shot_to_supabase(device_id, reading):
 
 
 def ingest_reading(device_id, data):
-    """Update the live reading + persist a real kick, scoped to one device."""
+    """Update the live reading + persist a real kick, scoped to one device.
+    Returns the normalized reading so the caller can also push it to
+    football_devices for Realtime subscribers."""
     reading = {
         "speed": _to_float(data.get("speed", 0)),
         "spin": _to_float(data.get("spin", 0)),
@@ -234,6 +246,8 @@ def ingest_reading(device_id, data):
     if reading["shot"] != "Kick Not Detected":
         save_shot_to_supabase(device_id, reading)
 
+    return reading
+
 
 # New firmware: authenticated, device-scoped, and reports health telemetry
 # alongside the kick reading in the same request.
@@ -246,12 +260,13 @@ def receive_data():
         return jsonify({"error": "invalid or missing device credentials"}), 401
 
     try:
-        ingest_reading(device["id"], data)
+        reading = ingest_reading(device["id"], data)
         touch_device(
             device["id"],
             firmware_version=data.get("firmware_version"),
             battery_pct=data.get("battery_pct"),
             wifi_rssi=data.get("wifi_rssi"),
+            reading=reading,
         )
         return jsonify({"message": "Data received successfully"}), 200
     except Exception as e:
@@ -276,13 +291,15 @@ def receive_data_batch():
         return jsonify({"error": "readings must be a list"}), 400
 
     try:
+        last_reading = None
         for reading in readings:
-            ingest_reading(device["id"], reading)
+            last_reading = ingest_reading(device["id"], reading)
         touch_device(
             device["id"],
             firmware_version=data.get("firmware_version"),
             battery_pct=data.get("battery_pct"),
             wifi_rssi=data.get("wifi_rssi"),
+            reading=last_reading,
         )
         return jsonify({"message": f"{len(readings)} readings received"}), 200
     except Exception as e:
