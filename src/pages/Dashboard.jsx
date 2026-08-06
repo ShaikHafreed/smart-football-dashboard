@@ -22,6 +22,7 @@ export default function Dashboard() {
   const [kickCount, setKickCount] = useState(0);
   const [chartData, setChartData] = useState([]);
   const [previous, setPrevious] = useState(null);
+  const activeDeviceId = localStorage.getItem("activeDeviceId") || "";
 
   // Tracks the last reading's id (server timestamp) so we only count/chart
   // each kick once, instead of once per 1s poll while it's still the latest reading.
@@ -33,12 +34,14 @@ export default function Dashboard() {
 
   useEffect(() => {
 
+    if (!activeDeviceId) return; // nothing to poll until a device is paired + selected on the Devices page
+
     const fetchData = async () => {
 
       try {
 
         const response =
-          await fetch(`${FLASK_URL}/data`);
+          await fetch(`${FLASK_URL}/data?device_id=${encodeURIComponent(activeDeviceId)}`);
 
         const result =
           await response.json();
@@ -117,9 +120,23 @@ export default function Dashboard() {
 
     return () => clearInterval(interval);
 
-  }, []);
+  }, [activeDeviceId]);
 
   const connectionStatus = data.connected ? "connected" : "disconnected";
+
+  if (!activeDeviceId) {
+    return (
+      <div className="mx-auto max-w-md rounded-xl border border-dashed border-border bg-card p-8 text-center animate-fadeIn">
+        <p className="font-medium">No ball paired yet</p>
+        <p className="mt-1 text-sm text-muted-foreground">
+          Head to the Devices page to pair a ball and set it active before live data shows up here.
+        </p>
+        <a href="/devices" className="mt-4 inline-block rounded-lg bg-primary px-4 py-2 text-sm font-semibold text-primary-foreground">
+          Go to Devices
+        </a>
+      </div>
+    );
+  }
 
   return (
     <div className="space-y-6 animate-fadeIn">

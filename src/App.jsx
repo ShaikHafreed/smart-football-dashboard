@@ -4,6 +4,7 @@ import Login from "./pages/Login";
 import DashboardRouter from "./pages/DashboardRouter";
 import PlayerAnalytics from "./pages/PlayerAnalytics";
 import Session from "./pages/Session";
+import Devices from "./pages/Devices";
 import History from "./pages/History";
 import Profile from "./pages/Profile";
 import Leaderboard from "./pages/Leaderboard";
@@ -70,6 +71,7 @@ export default function App() {
             <Route path="/dashboard" element={<DashboardRouter />} />
             <Route path="/analytics" element={<PlayerAnalytics />} />
             <Route path="/session" element={<Session />} />
+            <Route path="/devices" element={<Devices />} />
             <Route path="/history" element={<History />} />
             <Route path="/profile" element={<Profile />} />
           </Route>
