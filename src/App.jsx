@@ -1,6 +1,7 @@
 import { BrowserRouter, Routes, Route, Navigate } from "react-router-dom";
 
 import Login from "./pages/Login";
+import Legal from "./pages/Legal";
 import DashboardRouter from "./pages/DashboardRouter";
 import PlayerAnalytics from "./pages/PlayerAnalytics";
 import Session from "./pages/Session";
@@ -27,6 +28,7 @@ export default function App() {
           {/* 🔐 AUTH FLOW */}
           <Route path="/" element={<Navigate to="/login" />} />
           <Route path="/login" element={<Login />} />
+          <Route path="/legal" element={<Legal />} />
           <Route
             path="/auth/callback"
             element={

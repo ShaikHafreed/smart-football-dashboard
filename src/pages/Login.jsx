@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { useNavigate } from "react-router-dom";
+import { useNavigate, Link } from "react-router-dom";
 import { motion, AnimatePresence } from "framer-motion";
 import { Mail, Lock, ArrowRight, Loader2 } from "lucide-react";
 import { useAuth } from "../lib/AuthContext";
@@ -213,6 +213,11 @@ export default function Login() {
                   <>Already have an account? <span className="font-medium text-primary">Login</span></>
                 )}
               </button>
+
+              <p className="mt-6 text-center text-xs text-muted-foreground">
+                By continuing you agree to our{" "}
+                <Link to="/legal" className="underline hover:text-primary">Privacy Policy &amp; Terms</Link>.
+              </p>
             </motion.div>
           </AnimatePresence>
         </div>

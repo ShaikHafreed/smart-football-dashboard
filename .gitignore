@@ -16,6 +16,7 @@ backend/.env
 backend/venv
 __pycache__/
 *.pyc
+.pytest_cache/
 
 # Published firmware binaries are deployment artifacts, not source -- keep
 # the folder structure (see backend/firmware_releases/.gitkeep) but never

@@ -1,9 +1,10 @@
 import { useEffect, useState } from "react";
-import { useNavigate } from "react-router-dom";
+import { useNavigate, Link } from "react-router-dom";
 import { motion } from "framer-motion";
-import { Camera, Loader2, LogOut, Pencil, Users, Zap, Calendar, User, ClipboardList } from "lucide-react";
+import { Camera, Loader2, LogOut, Pencil, Users, Zap, Calendar, User, ClipboardList, Trash2 } from "lucide-react";
 import { supabase } from "../lib/supabaseClient";
 import { useAuth } from "../lib/AuthContext";
+import { FLASK_URL } from "../lib/flaskClient";
 import ConfirmDialog from "../components/ConfirmDialog";
 
 export default function Profile() {
@@ -14,6 +15,9 @@ export default function Profile() {
   const [editMode, setEditMode] = useState(false);
   const [saving, setSaving] = useState(false);
   const [confirmingLogout, setConfirmingLogout] = useState(false);
+  const [confirmingDelete, setConfirmingDelete] = useState(false);
+  const [deleting, setDeleting] = useState(false);
+  const [deleteError, setDeleteError] = useState("");
 
   useEffect(() => {
     setProfile(authProfile);
@@ -95,6 +99,33 @@ export default function Profile() {
   const handleLogout = async () => {
     await signOut();
     navigate("/login", { replace: true });
+  };
+
+  const handleDeleteAccount = async () => {
+    setDeleting(true);
+    setDeleteError("");
+
+    try {
+      const { data: { session } } = await supabase.auth.getSession();
+      const resp = await fetch(`${FLASK_URL}/api/account`, {
+        method: "DELETE",
+        headers: { Authorization: `Bearer ${session?.access_token}` },
+      });
+
+      if (!resp.ok) {
+        const body = await resp.json().catch(() => ({}));
+        throw new Error(body.error || "Couldn't delete your account — try again.");
+      }
+
+      // The account (and every player/session/shot/device/org it owned,
+      // cascaded at the database level) is gone -- nothing left to sign
+      // out of client-side except the now-invalid local session.
+      await supabase.auth.signOut();
+      navigate("/login", { replace: true });
+    } catch (err) {
+      setDeleteError(err.message);
+      setDeleting(false);
+    }
   };
 
   if (!profile) {
@@ -247,6 +278,32 @@ export default function Profile() {
         <LogOut className="h-4 w-4" /> Logout
       </button>
 
+      {/* DANGER ZONE */}
+      <div className="space-y-3 rounded-2xl border border-destructive/30 p-6">
+        <div>
+          <h2 className="font-display text-sm font-semibold text-destructive">Delete account</h2>
+          <p className="mt-1 text-xs text-muted-foreground">
+            Permanently deletes your account and everything tied to it — your profile, players you added,
+            session history, recorded shots, and any paired devices or academy you own. This can't be undone.
+          </p>
+        </div>
+
+        {deleteError && (
+          <p className="rounded-lg bg-destructive/10 px-3 py-2 text-xs text-destructive">{deleteError}</p>
+        )}
+
+        <button
+          onClick={() => setConfirmingDelete(true)}
+          className="flex w-full items-center justify-center gap-2 rounded-lg border border-destructive/40 py-2.5 text-sm font-medium text-destructive transition-colors hover:bg-destructive/10"
+        >
+          <Trash2 className="h-4 w-4" /> Delete my account
+        </button>
+      </div>
+
+      <p className="text-center text-xs text-muted-foreground">
+        <Link to="/legal" className="underline hover:text-primary">Privacy Policy &amp; Terms</Link>
+      </p>
+
       <ConfirmDialog
         open={confirmingLogout}
         title="Log out?"
@@ -254,6 +311,15 @@ export default function Profile() {
         confirmLabel="Log out"
         onCancel={() => setConfirmingLogout(false)}
         onConfirm={handleLogout}
+      />
+
+      <ConfirmDialog
+        open={confirmingDelete}
+        title="Delete your account permanently?"
+        message="This immediately and permanently deletes your account, profile, players, sessions, shots, and any devices or academy you own. There is no way to recover this afterward."
+        confirmLabel={deleting ? "Deleting…" : "Delete permanently"}
+        onCancel={() => setConfirmingDelete(false)}
+        onConfirm={() => { setConfirmingDelete(false); handleDeleteAccount(); }}
       />
     </div>
   );
