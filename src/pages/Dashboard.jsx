@@ -6,7 +6,7 @@ import ConnectionPanel from "../components/dashboard/ConnectionPanel";
 import PerformanceChart from "../components/dashboard/PerformanceChart";
 import FootballAnimation from "../components/dashboard/FootballAnimation";
 import StatsSummaryBar from "../components/dashboard/StatsSummaryBar";
-import { FLASK_URL } from "../lib/flaskClient";
+import { supabase } from "../lib/supabaseClient";
 
 export default function Dashboard() {
 
@@ -24,101 +24,106 @@ export default function Dashboard() {
   const [previous, setPrevious] = useState(null);
   const activeDeviceId = localStorage.getItem("activeDeviceId") || "";
 
-  // Tracks the last reading's id (server timestamp) so we only count/chart
-  // each kick once, instead of once per 1s poll while it's still the latest reading.
-  const lastSeenIdRef = useRef(null);
+  // Tracks the last reading's timestamp so we only count/chart each kick
+  // once, instead of once per re-render while it's still the latest reading.
+  const lastSeenAtRef = useRef(null);
+  // Latest known device row, so the client-side staleness check below can
+  // recompute "connected" without making a network call every second.
+  const latestRowRef = useRef(null);
 
   // =========================
-  // FETCH API DATA
+  // LIVE DATA — Supabase Realtime, not polling.
+  //
+  // The backend writes last_speed/last_spin/last_force/last_distance to
+  // this device's football_devices row on every reading (see
+  // backend/server.py's touch_device). Subscribing to UPDATE events on
+  // that one row means the dashboard updates the instant a kick lands,
+  // instead of waiting up to 1s for the next poll — and it's one open
+  // websocket instead of a fetch every second, RLS-scoped so this only
+  // ever works for a device this account actually owns.
   // =========================
 
   useEffect(() => {
 
-    if (!activeDeviceId) return; // nothing to poll until a device is paired + selected on the Devices page
+    if (!activeDeviceId) return;
 
-    const fetchData = async () => {
+    let cancelled = false;
 
-      try {
+    const applyRow = (row) => {
+      if (!row || cancelled) return;
+      latestRowRef.current = row;
 
-        const response =
-          await fetch(`${FLASK_URL}/data?device_id=${encodeURIComponent(activeDeviceId)}`);
+      const hasReading = row.last_reading_at != null;
+      const stale = !hasReading || Date.now() - new Date(row.last_reading_at).getTime() > 5000;
 
-        const result =
-          await response.json();
+      const result = {
+        speed: row.last_speed ?? 0,
+        spin: row.last_spin ?? 0,
+        force: row.last_force ?? 0,
+        distance: row.last_distance ?? 0,
+        shot: stale ? "Disconnected" : (row.last_shot || "Kick Not Detected"),
+        connected: !stale,
+      };
 
-        setData(result);
+      setData(result);
 
-        // =========================
-        // IF CONNECTED
-        // =========================
+      if (!stale) {
+        const isNewReading = row.last_reading_at !== lastSeenAtRef.current;
+        lastSeenAtRef.current = row.last_reading_at;
 
-        if (result.connected) {
+        if (isNewReading) {
+          setKickCount((prev) => prev + 1);
 
-          const isNewReading = result.id !== lastSeenIdRef.current;
-          lastSeenIdRef.current = result.id;
+          setPrevious((prev) => prev ?? { kickForce: result.force, ballSpeed: result.speed, spinRate: result.spin });
 
-          if (isNewReading) {
+          setChartData((prev) => {
+            const next = [
+              ...prev.slice(-14),
+              {
+                time: new Date().toLocaleTimeString([], { minute: "2-digit", second: "2-digit" }),
+                kickForce: result.force,
+                ballSpeed: result.speed,
+                spinRate: result.spin,
+              },
+            ];
 
-            setKickCount((prev) => prev + 1);
+            setPrevious(prev[prev.length - 1]
+              ? { kickForce: prev[prev.length - 1].kickForce, ballSpeed: prev[prev.length - 1].ballSpeed, spinRate: prev[prev.length - 1].spinRate }
+              : null);
 
-            setPrevious((prev) => prev ?? { kickForce: result.force, ballSpeed: result.speed, spinRate: result.spin });
-
-            setChartData((prev) => {
-              const next = [
-                ...prev.slice(-14),
-                {
-                  time: new Date().toLocaleTimeString([], { minute: "2-digit", second: "2-digit" }),
-                  kickForce: result.force,
-                  ballSpeed: result.speed,
-                  spinRate: result.spin,
-                },
-              ];
-
-              setPrevious(prev[prev.length - 1]
-                ? { kickForce: prev[prev.length - 1].kickForce, ballSpeed: prev[prev.length - 1].ballSpeed, spinRate: prev[prev.length - 1].spinRate }
-                : null);
-
-              return next;
-            });
-          }
-
-        }
-
-        // =========================
-        // IF DISCONNECTED
-        // =========================
-
-        else {
-
-          setData({
-            speed: 0,
-            spin: 0,
-            force: 0,
-            distance: 0,
-            shot: "Disconnected",
-            connected: false,
+            return next;
           });
         }
-
-      } catch (error) {
-
-        setData({
-          speed: 0,
-          spin: 0,
-          force: 0,
-          distance: 0,
-          shot: "Kick Not Detected",
-          connected: false,
-        });
       }
     };
 
-    fetchData();
+    // Realtime only pushes future changes, so fetch current state once up front.
+    supabase
+      .from("football_devices")
+      .select("*")
+      .eq("id", activeDeviceId)
+      .single()
+      .then(({ data: row }) => applyRow(row));
 
-    const interval =
-      setInterval(fetchData, 1000);
+    const channel = supabase
+      .channel(`device-live-${activeDeviceId}`)
+      .on(
+        "postgres_changes",
+        { event: "UPDATE", schema: "public", table: "football_devices", filter: `id=eq.${activeDeviceId}` },
+        (payload) => applyRow(payload.new)
+      )
+      .subscribe();
 
-    return () => clearInterval(interval);
+    // No network call here — just re-derives "connected" from whatever
+    // row we already have, so a ball that stops sending still flips to
+    // "Disconnected" within a few seconds instead of looking live forever.
+    const staleTick = setInterval(() => applyRow(latestRowRef.current), 1000);
+
+    return () => {
+      cancelled = true;
+      supabase.removeChannel(channel);
+      clearInterval(staleTick);
+    };
 
   }, [activeDeviceId]);
 
