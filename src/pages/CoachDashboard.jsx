@@ -13,7 +13,7 @@ import ChartErrorBoundary from "../components/ChartErrorBoundary";
 const PIE_COLORS = ["hsl(82,100%,64%)", "hsl(217,91%,60%)", "hsl(38,100%,64%)", "hsl(280,70%,65%)", "hsl(0,84%,65%)"];
 
 export default function CoachDashboard() {
-  const { user } = useAuth();
+  const { user, org } = useAuth();
   const [players, setPlayers] = useState([]);
   const [sessions, setSessions] = useState([]);
   const [shots, setShots] = useState([]);
@@ -68,7 +68,14 @@ export default function CoachDashboard() {
     setAddError("");
 
     try {
-      const { error } = await supabase.from("football_players").insert({ name: name.trim(), user_id: user.id });
+      // Attaching org_id (when this coach belongs to one) is what makes a
+      // new player show up for every coach in the org, not just the one
+      // who added them — loadAll()'s select has no user_id filter, so it
+      // already relies entirely on RLS ("own players" OR "org players")
+      // to decide what comes back.
+      const { error } = await supabase
+        .from("football_players")
+        .insert({ name: name.trim(), user_id: user.id, org_id: org?.id || null });
 
       if (error) throw error;
 

@@ -12,6 +12,7 @@ import {
   LogOut,
   LineChart,
   RadioTower,
+  Building2,
 } from "lucide-react";
 import { useAuth } from "../../lib/AuthContext";
 import ConfirmDialog from "../ConfirmDialog";
@@ -23,6 +24,7 @@ const COACH_MENU = [
   { name: "Dashboard", path: "/dashboard", icon: LayoutDashboard },
   { name: "Session", path: "/session", icon: Zap },
   { name: "Devices", path: "/devices", icon: RadioTower },
+  { name: "Organization", path: "/organization", icon: Building2 },
   { name: "History", path: "/history", icon: HistoryIcon },
   { name: "Profile", path: "/profile", icon: Settings },
 ];

@@ -7,6 +7,29 @@ export const AuthProvider = ({ children }) => {
   const [session, setSession] = useState(null);
   const [profile, setProfile] = useState(null);
   const [isLoadingAuth, setIsLoadingAuth] = useState(true);
+  const [org, setOrg] = useState(null);
+
+  const loadOrg = useCallback(async (userId) => {
+    if (!userId) {
+      setOrg(null);
+      return null;
+    }
+
+    // A coach can technically belong to more than one org via join-by-code,
+    // but this app only ever acts on one "current" org at a time — the
+    // oldest membership, so switching never happens implicitly out from
+    // under a coach mid-session.
+    const { data } = await supabase
+      .from("football_org_members")
+      .select("role, joined_at, football_organizations(id, name, invite_code, owner_id)")
+      .order("joined_at", { ascending: true })
+      .limit(1)
+      .maybeSingle();
+
+    const found = data?.football_organizations ? { ...data.football_organizations, myRole: data.role } : null;
+    setOrg(found);
+    return found;
+  }, []);
 
   const loadProfile = useCallback(async (userId) => {
     if (!userId) {
@@ -48,8 +71,10 @@ export const AuthProvider = ({ children }) => {
 
       if (newSession?.user?.id) {
         await loadProfile(newSession.user.id);
+        await loadOrg(newSession.user.id);
       } else {
         setProfile(null);
+        setOrg(null);
       }
 
       if (!resolvedFirstState) {
@@ -59,7 +84,7 @@ export const AuthProvider = ({ children }) => {
     });
 
     return () => listener.subscription.unsubscribe();
-  }, [loadProfile]);
+  }, [loadProfile, loadOrg]);
 
   const signUp = (email, password) => supabase.auth.signUp({ email, password });
   const signIn = (email, password) => supabase.auth.signInWithPassword({ email, password });
@@ -112,6 +137,8 @@ export const AuthProvider = ({ children }) => {
         signOut,
         refreshProfile,
         ensureSelfPlayer,
+        org,
+        refreshOrg: () => loadOrg(session?.user?.id),
       }}
     >
       {children}
