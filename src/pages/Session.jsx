@@ -63,11 +63,17 @@ export default function Session() {
       return;
     }
 
+    const activeDeviceId = localStorage.getItem("activeDeviceId") || "";
+    if (!activeDeviceId) {
+      setError("Pair and select a ball on the Devices page first.");
+      return;
+    }
+
     setError("");
 
     const { data, error: insertError } = await supabase
       .from("football_sessions")
-      .insert({ user_id: user.id, player_id: activePlayer.id })
+      .insert({ user_id: user.id, player_id: activePlayer.id, device_id: activeDeviceId })
       .select()
       .single();
 
@@ -82,7 +88,7 @@ export default function Session() {
       await fetch(`${FLASK}/api/session/start`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ session_id: data.id, player_id: activePlayer.id }),
+        body: JSON.stringify({ session_id: data.id, player_id: activePlayer.id, device_id: activeDeviceId }),
       });
     } catch {
       // Hardware relay offline — the session row is still recorded in Supabase.
@@ -102,7 +108,12 @@ export default function Session() {
     }
 
     try {
-      await fetch(`${FLASK}/api/session/stop`, { method: "POST" });
+      const activeDeviceId = localStorage.getItem("activeDeviceId") || "";
+      await fetch(`${FLASK}/api/session/stop`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ device_id: activeDeviceId }),
+      });
     } catch {
       // Ignore — nothing to clean up client-side if the relay is offline.
     }

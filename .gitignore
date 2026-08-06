@@ -14,6 +14,13 @@ dist-ssr
 .env
 backend/.env
 backend/venv
+__pycache__/
+*.pyc
+
+# Published firmware binaries are deployment artifacts, not source -- keep
+# the folder structure (see backend/firmware_releases/.gitkeep) but never
+# commit a compiled .bin.
+backend/firmware_releases/*.bin
 
 # Editor directories and files
 .vscode/*
