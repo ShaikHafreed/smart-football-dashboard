@@ -1,4 +1,5 @@
 import hmac
+import logging
 import os
 import secrets
 import time
@@ -7,14 +8,37 @@ import requests
 from dotenv import load_dotenv
 from flask import Flask, jsonify, request, send_from_directory
 from flask_cors import CORS
+from flask_limiter import Limiter
+from flask_limiter.util import get_remote_address
 
 load_dotenv()
+
+logging.basicConfig(
+    level=os.environ.get("LOG_LEVEL", "INFO"),
+    format="%(asctime)s %(levelname)s [%(name)s] %(message)s",
+)
+logger = logging.getLogger("smart_football")
 
 SUPABASE_URL = os.environ.get("SUPABASE_URL")
 SUPABASE_SERVICE_ROLE_KEY = os.environ.get("SUPABASE_SERVICE_ROLE_KEY")
 
 app = Flask(__name__)
-CORS(app)
+
+# Real deployed origins by default; override with a comma-separated
+# ALLOWED_ORIGINS env var rather than editing code for a new frontend
+# deployment (a preview URL, a new custom domain, etc).
+_default_origins = (
+    "https://football.hafreedshaik.online,"
+    "https://smart-football-dashboard.vercel.app,"
+    "http://localhost:5173,http://127.0.0.1:5173"
+)
+ALLOWED_ORIGINS = [o.strip() for o in os.environ.get("ALLOWED_ORIGINS", _default_origins).split(",") if o.strip()]
+CORS(app, origins=ALLOWED_ORIGINS)
+
+# In-memory store, matching the single-worker reality documented at the
+# bottom of this file -- move to a shared backend (Redis) before scaling
+# past one worker, same caveat as device_state below.
+limiter = Limiter(get_remote_address, app=app, default_limits=["200 per minute"], storage_uri="memory://")
 
 FIRMWARE_DIR = os.path.join(os.path.dirname(__file__), "firmware_releases")
 os.makedirs(FIRMWARE_DIR, exist_ok=True)
@@ -144,7 +168,7 @@ def touch_device(device_id, firmware_version=None, battery_pct=None, wifi_rssi=N
             timeout=5,
         )
     except requests.RequestException as e:
-        print("Failed to update device telemetry:", e)
+        logger.warning("Failed to update device telemetry for %s: %s", device_id, e)
 
 
 # ==========================================
@@ -152,6 +176,7 @@ def touch_device(device_id, firmware_version=None, battery_pct=None, wifi_rssi=N
 # ==========================================
 
 @app.route("/api/device/register", methods=["POST"])
+@limiter.limit("10 per hour")
 def register_device():
     """Called once by firmware on its very first boot (no stored token
     yet). Creates an unclaimed device row and returns its credentials.
@@ -196,9 +221,28 @@ def _to_float(value, default=0):
         return default
 
 
+# Generous physical bounds, not calibrated thresholds -- the formulas
+# behind speed/spin/force/distance are documented as uncalibrated indices,
+# not real physical units yet (see Smart-Football-AI-Sensor-Formulas.docx).
+# These exist to catch garbage/malicious payloads (a negative distance, a
+# force in the millions from a corrupted or spoofed request), not to
+# second-guess a real sensor reading that's merely unusual.
+SENSOR_BOUNDS = {
+    "speed": (0, 200),
+    "spin": (0, 3000),
+    "force": (0, 2000),
+    "distance": (0, 150),
+}
+
+
+def _clamp(value, bounds):
+    lo, hi = bounds
+    return max(lo, min(hi, value))
+
+
 def save_shot_to_supabase(device_id, reading):
     if not SUPABASE_URL or not SUPABASE_SERVICE_ROLE_KEY:
-        print("Supabase not configured (see backend/.env.example) — skipping shot persistence")
+        logger.warning("Supabase not configured (see backend/.env.example) — skipping shot persistence")
         return
 
     active = device_active_session.get(device_id, {})
@@ -225,7 +269,7 @@ def save_shot_to_supabase(device_id, reading):
             timeout=5,
         )
     except requests.RequestException as e:
-        print("Failed to save shot to Supabase:", e)
+        logger.error("Failed to save shot to Supabase for device %s: %s", device_id, e)
 
 
 def ingest_reading(device_id, data):
@@ -233,10 +277,10 @@ def ingest_reading(device_id, data):
     Returns the normalized reading so the caller can also push it to
     football_devices for Realtime subscribers."""
     reading = {
-        "speed": _to_float(data.get("speed", 0)),
-        "spin": _to_float(data.get("spin", 0)),
-        "force": _to_float(data.get("force", 0)),
-        "distance": _to_float(data.get("distance", 0)),
+        "speed": _clamp(_to_float(data.get("speed", 0)), SENSOR_BOUNDS["speed"]),
+        "spin": _clamp(_to_float(data.get("spin", 0)), SENSOR_BOUNDS["spin"]),
+        "force": _clamp(_to_float(data.get("force", 0)), SENSOR_BOUNDS["force"]),
+        "distance": _clamp(_to_float(data.get("distance", 0)), SENSOR_BOUNDS["distance"]),
         "shot": data.get("shot", "Kick Not Detected"),
         "connected": True,
     }
@@ -385,6 +429,56 @@ def firmware_binary():
     if not os.path.exists(bin_path):
         return jsonify({"error": "no firmware published"}), 404
     return send_from_directory(FIRMWARE_DIR, "latest.bin", mimetype="application/octet-stream")
+
+
+# ==========================================
+# ACCOUNT DELETION (DPDP right-to-erasure)
+#
+# Deleting the auth.users row cascades through every football_* table
+# (verified against the live schema's FK delete rules) -- profile, owned
+# players and their sessions/shots, owned devices, and any organization
+# this account owns (which in turn removes every other coach's membership
+# in that org -- an owner deleting their account does take the org with
+# them, not just their own seat in it).
+# ==========================================
+
+@app.route("/api/account", methods=["DELETE"])
+@limiter.limit("5 per hour")
+def delete_account():
+    auth_header = request.headers.get("Authorization", "")
+    if not auth_header.startswith("Bearer "):
+        return jsonify({"error": "missing bearer token"}), 401
+    access_token = auth_header.split(" ", 1)[1]
+
+    if not SUPABASE_URL or not SUPABASE_SERVICE_ROLE_KEY:
+        return jsonify({"error": "Supabase not configured"}), 503
+
+    # Never trust a user id from the request body -- resolve it from
+    # Supabase's own validation of the caller's access token, so an
+    # account can only ever delete itself.
+    whoami = requests.get(
+        f"{SUPABASE_URL}/auth/v1/user",
+        headers={"apikey": SUPABASE_SERVICE_ROLE_KEY, "Authorization": f"Bearer {access_token}"},
+        timeout=5,
+    )
+    if not whoami.ok:
+        return jsonify({"error": "invalid or expired session"}), 401
+
+    user_id = (whoami.json() or {}).get("id")
+    if not user_id:
+        return jsonify({"error": "invalid or expired session"}), 401
+
+    del_resp = requests.delete(
+        f"{SUPABASE_URL}/auth/v1/admin/users/{user_id}",
+        headers=_supabase_headers(),
+        timeout=10,
+    )
+    if not del_resp.ok:
+        logger.error("Account deletion failed for %s: %s", user_id, del_resp.text)
+        return jsonify({"error": "failed to delete account"}), 500
+
+    logger.info("Account deleted: %s", user_id)
+    return jsonify({"message": "Account deleted"}), 200
 
 
 # ==========================================

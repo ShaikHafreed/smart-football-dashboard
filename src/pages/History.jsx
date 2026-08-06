@@ -2,33 +2,9 @@ import { useEffect, useMemo, useState } from "react";
 import { motion } from "framer-motion";
 import { Loader2, Radar, Download, Search, ChevronLeft, ChevronRight } from "lucide-react";
 import { supabase } from "../lib/supabaseClient";
+import { downloadCsv } from "../utils/csv";
 
 const PAGE_SIZE = 25;
-
-function toCsv(rows) {
-  const header = ["Player", "Speed (km/h)", "Spin (rpm)", "Force (N)", "Distance (m)", "Shot Type", "Recorded At"];
-  const lines = rows.map((r) => [
-    r.football_players?.name || "Unknown",
-    r.speed,
-    r.spin,
-    r.force,
-    r.distance,
-    r.shot_type || "",
-    new Date(r.created_at).toISOString(),
-  ].map((v) => `"${String(v).replace(/"/g, '""')}"`).join(","));
-  return [header.join(","), ...lines].join("\n");
-}
-
-function downloadCsv(rows) {
-  const csv = toCsv(rows);
-  const blob = new Blob([csv], { type: "text/csv;charset=utf-8;" });
-  const url = URL.createObjectURL(blob);
-  const a = document.createElement("a");
-  a.href = url;
-  a.download = `shot-history-${new Date().toISOString().slice(0, 10)}.csv`;
-  a.click();
-  URL.revokeObjectURL(url);
-}
 
 export default function History() {
   const [data, setData] = useState([]);
