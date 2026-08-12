@@ -3,6 +3,7 @@ import logging
 import os
 import secrets
 import time
+from functools import wraps
 
 import requests
 from dotenv import load_dotenv
@@ -83,6 +84,44 @@ def _supabase_headers():
         "Authorization": f"Bearer {SUPABASE_SERVICE_ROLE_KEY}",
         "Content-Type": "application/json",
     }
+
+
+def get_authenticated_user_id(request):
+    """Resolve the caller's user id from a Supabase access token, or None.
+
+    Never trust a user id from a request body/query string for anything
+    that mutates data -- this is the one source of truth, verified against
+    Supabase's own auth service on every call (no local JWT decoding, so
+    there's no signing-key/JWKS to keep in sync here)."""
+    auth_header = request.headers.get("Authorization", "")
+    if not auth_header.startswith("Bearer "):
+        return None
+    access_token = auth_header.split(" ", 1)[1]
+
+    if not SUPABASE_URL or not SUPABASE_SERVICE_ROLE_KEY:
+        return None
+
+    whoami = requests.get(
+        f"{SUPABASE_URL}/auth/v1/user",
+        headers={"apikey": SUPABASE_SERVICE_ROLE_KEY, "Authorization": f"Bearer {access_token}"},
+        timeout=5,
+    )
+    if not whoami.ok:
+        return None
+    return (whoami.json() or {}).get("id")
+
+
+def require_user_auth(fn):
+    """Route decorator: resolves the caller's Supabase user id and passes it
+    as the first argument, or short-circuits with 401. Keeps every
+    user-authenticated route from re-deriving this by hand."""
+    @wraps(fn)
+    def wrapper(*args, **kwargs):
+        user_id = get_authenticated_user_id(request)
+        if not user_id:
+            return jsonify({"error": "missing, invalid, or expired session"}), 401
+        return fn(user_id, *args, **kwargs)
+    return wrapper
 
 
 def get_device_by_uid(device_uid):
@@ -444,29 +483,10 @@ def firmware_binary():
 
 @app.route("/api/account", methods=["DELETE"])
 @limiter.limit("5 per hour")
-def delete_account():
-    auth_header = request.headers.get("Authorization", "")
-    if not auth_header.startswith("Bearer "):
-        return jsonify({"error": "missing bearer token"}), 401
-    access_token = auth_header.split(" ", 1)[1]
-
+@require_user_auth
+def delete_account(user_id):
     if not SUPABASE_URL or not SUPABASE_SERVICE_ROLE_KEY:
         return jsonify({"error": "Supabase not configured"}), 503
-
-    # Never trust a user id from the request body -- resolve it from
-    # Supabase's own validation of the caller's access token, so an
-    # account can only ever delete itself.
-    whoami = requests.get(
-        f"{SUPABASE_URL}/auth/v1/user",
-        headers={"apikey": SUPABASE_SERVICE_ROLE_KEY, "Authorization": f"Bearer {access_token}"},
-        timeout=5,
-    )
-    if not whoami.ok:
-        return jsonify({"error": "invalid or expired session"}), 401
-
-    user_id = (whoami.json() or {}).get("id")
-    if not user_id:
-        return jsonify({"error": "invalid or expired session"}), 401
 
     del_resp = requests.delete(
         f"{SUPABASE_URL}/auth/v1/admin/users/{user_id}",
