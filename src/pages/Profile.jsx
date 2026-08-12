@@ -4,7 +4,7 @@ import { motion } from "framer-motion";
 import { Camera, Loader2, LogOut, Pencil, Users, Zap, Calendar, User, ClipboardList, Trash2 } from "lucide-react";
 import { supabase } from "../lib/supabaseClient";
 import { useAuth } from "../lib/AuthContext";
-import { FLASK_URL } from "../lib/flaskClient";
+import { authedFetch } from "../lib/flaskClient";
 import ConfirmDialog from "../components/ConfirmDialog";
 
 export default function Profile() {
@@ -106,11 +106,7 @@ export default function Profile() {
     setDeleteError("");
 
     try {
-      const { data: { session } } = await supabase.auth.getSession();
-      const resp = await fetch(`${FLASK_URL}/api/account`, {
-        method: "DELETE",
-        headers: { Authorization: `Bearer ${session?.access_token}` },
-      });
+      const resp = await authedFetch("/api/account", { method: "DELETE" });
 
       if (!resp.ok) {
         const body = await resp.json().catch(() => ({}));
