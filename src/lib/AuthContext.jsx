@@ -6,6 +6,7 @@ const AuthContext = createContext();
 export const AuthProvider = ({ children }) => {
   const [session, setSession] = useState(null);
   const [profile, setProfile] = useState(null);
+  const [profileError, setProfileError] = useState(null);
   const [isLoadingAuth, setIsLoadingAuth] = useState(true);
   const [org, setOrg] = useState(null);
 
@@ -34,6 +35,7 @@ export const AuthProvider = ({ children }) => {
   const loadProfile = useCallback(async (userId) => {
     if (!userId) {
       setProfile(null);
+      setProfileError(null);
       return null;
     }
 
@@ -44,15 +46,25 @@ export const AuthProvider = ({ children }) => {
       .maybeSingle();
 
     if (!data && !error) {
-      const { data: created } = await supabase
+      ({ data, error } = await supabase
         .from("football_profiles")
         .upsert({ id: userId })
         .select()
-        .single();
-      data = created;
+        .single());
+    }
+
+    if (error) {
+      // Surfaced rather than swallowed: a null profile with no error signal
+      // used to leave AuthCallback's "if (!profile) return" guard waiting
+      // forever, spinning on "Signing you in..." with no way out.
+      console.error("Failed to load/create profile:", error);
+      setProfile(null);
+      setProfileError(error);
+      return null;
     }
 
     setProfile(data || null);
+    setProfileError(null);
     return data || null;
   }, []);
 
@@ -128,6 +140,7 @@ export const AuthProvider = ({ children }) => {
         session,
         user: session?.user ?? null,
         profile,
+        profileError,
         role: profile?.role || "player",
         isAuthenticated: !!session,
         isLoadingAuth,
