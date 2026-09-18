@@ -124,14 +124,15 @@ export default function Login() {
 
               <form onSubmit={handleSubmit} className="mt-8 space-y-4">
                 <div className="relative">
-                  <Mail className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+                  <label htmlFor="email" className="sr-only">Email</label>
+                  <Mail aria-hidden="true" className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
                   <input
                     type="email"
                     name="email"
                     id="email"
                     autoComplete="email"
                     placeholder="Email"
-                    className="w-full rounded-lg border border-border bg-secondary/40 py-3 pl-10 pr-3 text-sm outline-none transition-colors focus:border-primary"
+                    className="field !pl-10"
                     value={email}
                     onChange={(e) => setEmail(e.target.value)}
                     required
@@ -139,14 +140,15 @@ export default function Login() {
                 </div>
 
                 <div className="relative">
-                  <Lock className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+                  <label htmlFor="password" className="sr-only">Password</label>
+                  <Lock aria-hidden="true" className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
                   <input
                     type="password"
                     name="password"
                     id="password"
                     autoComplete={mode === "login" ? "current-password" : "new-password"}
                     placeholder="Password (min 6 characters)"
-                    className="w-full rounded-lg border border-border bg-secondary/40 py-3 pl-10 pr-3 text-sm outline-none transition-colors focus:border-primary"
+                    className="field !pl-10"
                     value={password}
                     onChange={(e) => setPassword(e.target.value)}
                     minLength={6}
@@ -155,22 +157,18 @@ export default function Login() {
                 </div>
 
                 {error && (
-                  <p className="rounded-lg bg-destructive/10 px-3 py-2 text-sm text-destructive">
+                  <p role="alert" className="rounded-xl border border-destructive/40 bg-destructive/10 px-3 py-2 text-sm text-destructive">
                     {error}
                   </p>
                 )}
 
-                <button
-                  type="submit"
-                  disabled={loading}
-                  className="flex w-full items-center justify-center gap-2 rounded-lg bg-primary py-3 text-sm font-semibold text-primary-foreground transition-opacity hover:opacity-90 disabled:opacity-50"
-                >
+                <button type="submit" disabled={loading} className="btn btn-primary w-full">
                   {loading ? (
                     <Loader2 className="h-4 w-4 animate-spin" />
                   ) : (
                     <>
-                      {mode === "login" ? "Login" : "Sign Up"}
-                      <ArrowRight className="h-4 w-4" />
+                      {mode === "login" ? "Log in" : "Create account"}
+                      <ArrowRight aria-hidden="true" className="h-4 w-4" />
                     </>
                   )}
                 </button>
@@ -182,12 +180,7 @@ export default function Login() {
                 <div className="h-px flex-1 bg-border" />
               </div>
 
-              <button
-                type="button"
-                onClick={handleGoogle}
-                disabled={googleLoading}
-                className="flex w-full items-center justify-center gap-2 rounded-lg border border-border py-3 text-sm font-medium transition-colors hover:bg-secondary/40 disabled:opacity-50"
-              >
+              <button type="button" onClick={handleGoogle} disabled={googleLoading} className="btn btn-quiet w-full">
                 {googleLoading ? (
                   <Loader2 className="h-4 w-4 animate-spin" />
                 ) : (

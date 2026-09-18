@@ -1,9 +1,11 @@
 import { useCallback, useEffect, useState } from "react";
 import { motion } from "framer-motion";
-import { Loader2, Radar, Download, Search, ChevronLeft, ChevronRight } from "lucide-react";
+import { Radar, Download, Search, ChevronLeft, ChevronRight } from "lucide-react";
 import { supabase } from "../lib/supabaseClient";
 import { downloadCsv } from "../utils/csv";
 import { fetchShotHistoryPage, HISTORY_PAGE_SIZE } from "../lib/analyticsQueries";
+import PageHeader from "../components/common/PageHeader";
+import StateBlock from "../components/common/StateBlock";
 
 const PAGE_SIZE = HISTORY_PAGE_SIZE;
 const REALTIME_COALESCE_MS = 2000;
@@ -99,37 +101,41 @@ export default function History() {
 
   return (
     <div className="space-y-6 animate-fadeIn">
-      <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
-        <div>
-          <h1 className="font-display text-2xl font-semibold">Shot History</h1>
-          <p className="text-sm text-muted-foreground">Every recorded kick, most recent first.</p>
-        </div>
-
-        <button
-          onClick={() => downloadCsv(data)}
-          disabled={data.length === 0}
-          className="flex items-center gap-2 rounded-lg border border-border px-3 py-2 text-sm font-medium text-muted-foreground hover:bg-secondary/60 disabled:opacity-40"
-        >
-          <Download className="h-4 w-4" /> Export page as CSV
-        </button>
-      </div>
+      <PageHeader
+        eyebrow="Training"
+        title="Shot History"
+        description={totalCount ? `${totalCount.toLocaleString()} recorded kick${totalCount === 1 ? "" : "s"}, most recent first.` : "Every recorded kick, most recent first."}
+        actions={
+          <button
+            onClick={() => downloadCsv(data)}
+            disabled={data.length === 0}
+            className="btn btn-quiet btn-sm"
+          >
+            <Download aria-hidden="true" className="h-4 w-4" /> Export this page
+          </button>
+        }
+      />
 
       {/* FILTERS */}
       <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
         <div className="relative flex-1">
           <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+          <label htmlFor="history-search" className="sr-only">Search by player name</label>
           <input
+            id="history-search"
             value={search}
             onChange={(e) => setSearch(e.target.value)}
             placeholder="Search all history by player name…"
-            className="w-full rounded-lg border border-border bg-background py-2 pl-9 pr-3 text-sm outline-none focus:ring-2 focus:ring-primary/40"
+            className="field !pl-9"
           />
         </div>
 
+        <label htmlFor="history-player" className="sr-only">Filter by player</label>
         <select
+          id="history-player"
           value={playerFilter}
           onChange={(e) => { setPlayerFilter(e.target.value); setPage(0); }}
-          className="rounded-lg border border-border bg-background px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-primary/40"
+          className="field sm:w-56"
         >
           <option value="">All players</option>
           {players.map((p) => (
@@ -138,23 +144,20 @@ export default function History() {
         </select>
       </div>
 
-      {loading && (
-        <div className="flex items-center gap-2 p-10 text-muted-foreground">
-          <Loader2 className="h-4 w-4 animate-spin" /> Loading…
-        </div>
-      )}
+      {loading && <StateBlock variant="loading" />}
 
-      {error && (
-        <p className="rounded-lg bg-destructive/10 px-3 py-2 text-center text-sm text-destructive">{error}</p>
-      )}
+      {error && <StateBlock variant="error" icon={Radar} title="Couldn't load history" message={error} />}
 
       {!loading && !error && visible.length === 0 && (
-        <div className="flex flex-col items-center gap-2 rounded-xl border border-dashed border-border p-10 text-center text-muted-foreground">
-          <Radar className="h-6 w-6" />
-          {appliedSearch || playerFilter
-            ? "No shots match that search."
-            : "No shots recorded yet — run a Session with a player selected."}
-        </div>
+        <StateBlock
+          icon={Radar}
+          title={appliedSearch || playerFilter ? "No matching shots" : "No shots recorded yet"}
+          message={
+            appliedSearch || playerFilter
+              ? "Try a different player or clear the filters."
+              : "Run a session with a player selected and every kick lands here."
+          }
+        />
       )}
 
       <div className="space-y-2">
@@ -166,9 +169,9 @@ export default function History() {
             transition={{ delay: Math.min(i * 0.02, 0.3) }}
             className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-border bg-card p-4"
           >
-            <span className="font-medium">{item.football_players?.name || "Unknown"}</span>
+            <span className="min-w-0 truncate font-medium">{item.football_players?.name || "Unknown"}</span>
 
-            <div className="flex flex-wrap gap-4 font-data text-sm text-muted-foreground">
+            <div className="flex flex-wrap gap-x-4 gap-y-1 font-data text-sm tabular-nums text-muted-foreground">
               <span><span className="text-foreground">{item.speed}</span> km/h</span>
               <span><span className="text-foreground">{item.spin}</span> rpm</span>
               <span><span className="text-foreground">{item.force}</span> N</span>
@@ -192,16 +195,16 @@ export default function History() {
             <button
               onClick={() => setPage((p) => Math.max(0, p - 1))}
               disabled={page === 0}
-              className="flex items-center gap-1 rounded-lg border border-border px-3 py-1.5 text-sm text-muted-foreground hover:bg-secondary/60 disabled:opacity-40"
+              className="btn btn-quiet btn-sm"
             >
-              <ChevronLeft className="h-4 w-4" /> Prev
+              <ChevronLeft aria-hidden="true" className="h-4 w-4" /> Prev
             </button>
             <button
               onClick={() => setPage((p) => Math.min(totalPages - 1, p + 1))}
               disabled={page >= totalPages - 1}
-              className="flex items-center gap-1 rounded-lg border border-border px-3 py-1.5 text-sm text-muted-foreground hover:bg-secondary/60 disabled:opacity-40"
+              className="btn btn-quiet btn-sm"
             >
-              Next <ChevronRight className="h-4 w-4" />
+              Next <ChevronRight aria-hidden="true" className="h-4 w-4" />
             </button>
           </div>
         </div>

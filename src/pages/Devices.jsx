@@ -5,6 +5,9 @@ import { supabase } from "../lib/supabaseClient";
 import { useAuth } from "../lib/AuthContext";
 import { authedFetch } from "../lib/flaskClient";
 import ConfirmDialog from "../components/ConfirmDialog";
+import PageHeader from "../components/common/PageHeader";
+import Panel from "../components/common/Panel";
+import StateBlock from "../components/common/StateBlock";
 
 function timeAgo(iso) {
   if (!iso) return "never";
@@ -133,28 +136,29 @@ export default function Devices() {
         onConfirm={() => handleRelease(releasing)}
       />
 
-      <div>
-        <h1 className="font-display text-2xl font-semibold">Devices</h1>
-        <p className="text-sm text-muted-foreground">
-          Pair a physical ball to your account, and pick which one the Dashboard and Session pages listen to.
-        </p>
-      </div>
+      <PageHeader
+        eyebrow="Setup"
+        title="Devices"
+        description="Pair a ball to your account, and choose which one the Dashboard and Session pages listen to."
+      />
 
       {error && (
-        <p className="rounded-lg bg-destructive/10 px-3 py-2 text-center text-sm text-destructive">{error}</p>
+        <p role="alert" className="rounded-xl border border-destructive/40 bg-destructive/10 px-4 py-3 text-sm text-destructive">{error}</p>
       )}
       {notice && (
-        <p className="rounded-lg bg-primary/10 px-3 py-2 text-center text-sm text-primary">{notice}</p>
+        <p role="status" className="rounded-xl border border-primary/40 bg-primary/10 px-4 py-3 text-sm text-primary">{notice}</p>
       )}
 
       {/* PAIRED DEVICES */}
       <div className="space-y-3">
-        <h2 className="text-sm font-semibold text-muted-foreground">Your balls</h2>
+        <h2 className="eyebrow">Your balls</h2>
 
         {myDevices.length === 0 && (
-          <div className="rounded-xl border border-dashed border-border bg-card p-6 text-center text-sm text-muted-foreground">
-            No ball paired yet — pair one below using the ID and code it prints on startup.
-          </div>
+          <StateBlock
+            icon={RadioTower}
+            title="No ball paired yet"
+            message="Power a ball on, then pair it below with the ID and code it prints to its serial monitor."
+          />
         )}
 
         {myDevices.map((d) => {
@@ -185,19 +189,12 @@ export default function Devices() {
                       <Check className="h-3 w-3" /> Active
                     </span>
                   ) : (
-                    <button
-                      onClick={() => setActive(d.id)}
-                      className="rounded-lg border border-border px-3 py-1.5 text-xs font-medium text-muted-foreground hover:bg-secondary/60"
-                    >
-                      Set active
-                    </button>
+                  <button onClick={() => setActive(d.id)} className="btn btn-quiet btn-sm">
+                    Set active
+                  </button>
                   )}
 
-                  <button
-                    onClick={() => setReleasing(d)}
-                    disabled={busy}
-                    className="rounded-lg border border-border px-3 py-1.5 text-xs font-medium text-destructive hover:bg-destructive/10 disabled:opacity-40"
-                  >
+                  <button onClick={() => setReleasing(d)} disabled={busy} className="btn btn-danger btn-sm">
                     Release
                   </button>
                 </div>
@@ -225,40 +222,41 @@ export default function Devices() {
       </div>
 
       {/* PAIR A DEVICE */}
-      <div className="space-y-3 rounded-xl border border-border bg-card p-4">
-        <h2 className="text-sm font-semibold text-muted-foreground">Pair a new ball</h2>
-
-        <p className="text-xs text-muted-foreground">
-          Power the ball on and open its Serial monitor. It prints a <strong>Device ID</strong> and a{" "}
-          <strong>pairing code</strong> — both are needed here. The code proves you're the one holding the
-          ball, so nobody else can pair it.
-        </p>
-
-        <form onSubmit={handleClaim} className="space-y-2">
-          <input
-            value={claimUid}
-            onChange={(e) => setClaimUid(e.target.value)}
-            placeholder="Device ID (from Serial monitor)"
-            className="w-full rounded-lg border border-border bg-background px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-primary/40"
-          />
-          <div className="flex gap-2">
+      <Panel
+        title="Pair a new ball"
+        icon={RadioTower}
+        description="Power the ball on and open its serial monitor. It prints a Device ID and a pairing code — the code proves you are the one holding it, so nobody else can pair it."
+      >
+        <form onSubmit={handleClaim} className="space-y-3">
+          <div>
+            <label htmlFor="device-uid" className="text-xs font-medium text-muted-foreground">Device ID</label>
             <input
-              value={pairingCode}
-              onChange={(e) => setPairingCode(e.target.value.toUpperCase())}
-              placeholder="Pairing code"
-              autoComplete="off"
-              className="flex-1 rounded-lg border border-border bg-background px-3 py-2 font-data text-sm tracking-widest outline-none focus:ring-2 focus:ring-primary/40"
+              id="device-uid"
+              value={claimUid}
+              onChange={(e) => setClaimUid(e.target.value)}
+              placeholder="From the serial monitor"
+              className="field mt-1.5"
             />
-            <button
-              type="submit"
-              disabled={busy}
-              className="flex items-center gap-2 rounded-lg bg-primary px-4 py-2 text-sm font-semibold text-primary-foreground disabled:opacity-40"
-            >
-              {busy && <Loader2 className="h-4 w-4 animate-spin" />} Pair
-            </button>
+          </div>
+
+          <div>
+            <label htmlFor="pairing-code" className="text-xs font-medium text-muted-foreground">Pairing code</label>
+            <div className="mt-1.5 flex flex-col gap-2 sm:flex-row">
+              <input
+                id="pairing-code"
+                value={pairingCode}
+                onChange={(e) => setPairingCode(e.target.value.toUpperCase())}
+                placeholder="8 characters"
+                autoComplete="off"
+                className="field font-data flex-1 tracking-[0.2em]"
+              />
+              <button type="submit" disabled={busy} className="btn btn-primary">
+                {busy && <Loader2 aria-hidden="true" className="h-4 w-4 animate-spin" />} Pair ball
+              </button>
+            </div>
           </div>
         </form>
-      </div>
+      </Panel>
     </div>
   );
 }

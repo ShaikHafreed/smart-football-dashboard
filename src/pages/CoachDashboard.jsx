@@ -1,14 +1,18 @@
 import { useEffect, useMemo, useState } from "react";
+import { Link } from "react-router-dom";
 import { motion } from "framer-motion";
 import {
   PieChart, Pie, Cell, Legend, Tooltip, ResponsiveContainer,
   LineChart, Line, XAxis, YAxis, CartesianGrid,
 } from "recharts";
-import { UserPlus, Trash2, CheckCircle2, Users, Loader2 } from "lucide-react";
+import { UserPlus, Trash2, CheckCircle2, Users, Loader2, Zap } from "lucide-react";
 import { supabase } from "../lib/supabaseClient";
 import { useAuth } from "../lib/AuthContext";
 import PlayerDetailModal from "../components/players/PlayerDetailModal";
 import ChartErrorBoundary from "../components/ChartErrorBoundary";
+import PageHeader from "../components/common/PageHeader";
+import Panel from "../components/common/Panel";
+import StateBlock from "../components/common/StateBlock";
 import {
   fetchPlayerShotStats,
   fetchPlayerSessionStats,
@@ -150,89 +154,108 @@ export default function CoachDashboard() {
     .map((p) => ({ name: p.name, value: p.sessionCount }));
 
   if (loading) {
-    return (
-      <div className="flex items-center justify-center gap-2 p-10 text-muted-foreground">
-        <Loader2 className="h-4 w-4 animate-spin" /> Loading roster…
-      </div>
-    );
+    return <StateBlock variant="loading" title="Loading roster…" />;
   }
 
   return (
     <div className="space-y-6 animate-fadeIn">
-      <div>
-        <h1 className="font-display text-2xl font-semibold">Coach Dashboard</h1>
-        <p className="text-sm text-muted-foreground">Your roster, and how the whole team is trending.</p>
-      </div>
+      <PageHeader
+        eyebrow="Overview"
+        title="Coach Dashboard"
+        description="Your roster, and how the whole squad is trending."
+        actions={
+          <Link to="/session" className="btn btn-primary">
+            <Zap aria-hidden="true" className="h-4 w-4" /> Start a session
+          </Link>
+        }
+      />
 
       {loadError && (
-        <p className="rounded-lg bg-destructive/10 px-3 py-2 text-center text-sm text-destructive">{loadError}</p>
+        <p role="alert" className="rounded-xl border border-destructive/40 bg-destructive/10 px-4 py-3 text-sm text-destructive">
+          {loadError}
+        </p>
       )}
 
       {/* ROSTER */}
-      <div className="rounded-2xl border border-border bg-card p-6">
-        <div className="mb-4 flex items-center gap-2">
-          <Users className="h-4 w-4 text-primary" />
-          <h2 className="font-display text-sm font-semibold">Roster</h2>
-          <span className="ml-auto text-xs text-muted-foreground">{players.length} player{players.length === 1 ? "" : "s"}</span>
-        </div>
-
-        <div className="mb-2 flex gap-3">
+      <Panel
+        title="Roster"
+        icon={Users}
+        actions={<span className="text-xs text-muted-foreground">{players.length} player{players.length === 1 ? "" : "s"}</span>}
+      >
+        <div className="flex flex-col gap-2 sm:flex-row">
+          <label htmlFor="add-player" className="sr-only">Player name</label>
           <input
+            id="add-player"
             value={name}
             onChange={(e) => setName(e.target.value)}
             onKeyDown={(e) => e.key === "Enter" && addPlayer()}
-            placeholder="Add a player..."
-            className="flex-1 rounded-lg border border-border bg-secondary/40 px-4 py-2.5 text-sm outline-none focus:border-primary"
+            placeholder="Add a player…"
+            className="field flex-1"
           />
           <motion.button
             whileTap={{ scale: 0.96 }}
             onClick={addPlayer}
             disabled={adding}
-            className="flex items-center gap-2 rounded-lg bg-primary px-4 py-2.5 text-sm font-semibold text-primary-foreground disabled:opacity-50"
+            className="btn btn-primary"
           >
-            {adding ? <Loader2 className="h-4 w-4 animate-spin" /> : <UserPlus className="h-4 w-4" />} Add
+            {adding ? <Loader2 className="h-4 w-4 animate-spin" /> : <UserPlus className="h-4 w-4" />} Add player
           </motion.button>
         </div>
 
         {addError && (
-          <p className="mb-4 rounded-lg bg-destructive/10 px-3 py-2 text-xs text-destructive">{addError}</p>
+          <p role="alert" className="mt-3 rounded-xl border border-destructive/40 bg-destructive/10 px-3 py-2 text-xs text-destructive">{addError}</p>
         )}
 
         {roster.length === 0 ? (
-          <p className="text-sm text-muted-foreground">No players yet — add one above.</p>
+          <p className="mt-4 text-sm text-muted-foreground">No players yet — add one above to start recording sessions for them.</p>
         ) : (
-          <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+          <ul className="mt-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
             {roster.map((p) => {
               const isActive = activePlayerId === p.id;
               return (
-                <div
+                <li
                   key={p.id}
-                  className={`rounded-xl border p-4 transition-colors ${isActive ? "border-primary/60 bg-primary/10" : "border-border bg-secondary/20 hover:border-primary/30"}`}
+                  className={`rounded-xl border p-4 transition-colors ${isActive ? "border-primary/60 bg-primary/10" : "border-border bg-secondary/20 hover:border-primary/40"}`}
                 >
-                  <div className="flex items-center justify-between">
-                    <button onClick={() => setDetailPlayer(p)} className="text-left font-medium hover:text-primary">
-                      {p.name}
+                  <div className="flex items-start justify-between gap-2">
+                    <button
+                      onClick={() => setDetailPlayer(p)}
+                      className="min-w-0 flex-1 text-left font-medium hover:text-primary"
+                    >
+                      <span className="block truncate">{p.name}</span>
+                      <span className="font-data mt-1 block text-xs font-normal text-muted-foreground">
+                        {p.totalShots} shot{p.totalShots === 1 ? "" : "s"} · best {p.bestSpeed} km/h · {p.sessionCount} session{p.sessionCount === 1 ? "" : "s"}
+                      </span>
                     </button>
-                    <button onClick={() => deletePlayer(p.id)} className="text-muted-foreground hover:text-destructive">
-                      <Trash2 className="h-4 w-4" />
+                    <button
+                      onClick={() => deletePlayer(p.id)}
+                      aria-label={`Remove ${p.name}`}
+                      className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg text-muted-foreground transition-colors hover:bg-destructive/10 hover:text-destructive"
+                    >
+                      <Trash2 aria-hidden="true" className="h-4 w-4" />
                     </button>
                   </div>
-                  <p className="mt-1 text-xs text-muted-foreground">{p.totalShots} shots · best {p.bestSpeed} km/h</p>
-                  <button onClick={() => selectActive(p.id)} className="mt-2 flex items-center gap-1.5 text-xs font-medium text-primary">
-                    <CheckCircle2 className="h-3.5 w-3.5" /> {isActive ? "Active for next Session" : "Set active"}
+
+                  <button
+                    onClick={() => selectActive(p.id)}
+                    aria-pressed={isActive}
+                    className={`mt-3 flex min-h-[36px] w-full items-center justify-center gap-1.5 rounded-lg border px-3 text-xs font-medium transition-colors
+                      ${isActive ? "border-primary/50 bg-primary/15 text-primary" : "border-border text-muted-foreground hover:text-foreground"}`}
+                  >
+                    <CheckCircle2 aria-hidden="true" className="h-3.5 w-3.5" />
+                    {isActive ? "Active for next session" : "Set active"}
                   </button>
-                </div>
+                </li>
               );
             })}
-          </div>
+          </ul>
         )}
-      </div>
+      </Panel>
 
       {/* CHARTS */}
       <div className="grid gap-4 lg:grid-cols-2">
-        <div className="rounded-2xl border border-border bg-card p-6">
-          <h2 className="font-display text-sm font-semibold">Session Attendance</h2>
-          <div className="mt-2 h-56">
+        <Panel title="Session attendance" description="Sessions recorded per player.">
+          <div className="h-56">
             <ChartErrorBoundary>
               {attendanceData.length === 0 ? (
                 <p className="flex h-full items-center justify-center text-sm text-muted-foreground">No sessions recorded yet.</p>
@@ -242,18 +265,17 @@ export default function CoachDashboard() {
                     <Pie data={attendanceData} dataKey="value" nameKey="name" innerRadius={45} outerRadius={75} paddingAngle={2} isAnimationActive={false}>
                       {attendanceData.map((_, i) => <Cell key={i} fill={PIE_COLORS[i % PIE_COLORS.length]} />)}
                     </Pie>
-                    <Tooltip contentStyle={{ background: "hsl(var(--card))", border: "1px solid hsl(var(--border))", borderRadius: 8, fontSize: 12 }} />
+                    <Tooltip contentStyle={{ background: "hsl(var(--card))", border: "1px solid hsl(var(--border))", borderRadius: 12, fontSize: 12, color: "hsl(var(--foreground))" }} />
                     <Legend wrapperStyle={{ fontSize: 12 }} />
                   </PieChart>
                 </ResponsiveContainer>
               )}
             </ChartErrorBoundary>
           </div>
-        </div>
+        </Panel>
 
-        <div className="rounded-2xl border border-border bg-card p-6">
-          <h2 className="font-display text-sm font-semibold">Shot Type Distribution</h2>
-          <div className="mt-2 h-56">
+        <Panel title="Shot types" description="Distribution across the roster.">
+          <div className="h-56">
             <ChartErrorBoundary>
               {shotTypeData.length === 0 ? (
                 <p className="flex h-full items-center justify-center text-sm text-muted-foreground">No shots recorded yet.</p>
@@ -263,29 +285,28 @@ export default function CoachDashboard() {
                     <Pie data={shotTypeData} dataKey="value" nameKey="name" innerRadius={45} outerRadius={75} paddingAngle={2} isAnimationActive={false}>
                       {shotTypeData.map((_, i) => <Cell key={i} fill={PIE_COLORS[i % PIE_COLORS.length]} />)}
                     </Pie>
-                    <Tooltip contentStyle={{ background: "hsl(var(--card))", border: "1px solid hsl(var(--border))", borderRadius: 8, fontSize: 12 }} />
+                    <Tooltip contentStyle={{ background: "hsl(var(--card))", border: "1px solid hsl(var(--border))", borderRadius: 12, fontSize: 12, color: "hsl(var(--foreground))" }} />
                     <Legend wrapperStyle={{ fontSize: 12 }} />
                   </PieChart>
                 </ResponsiveContainer>
               )}
             </ChartErrorBoundary>
           </div>
-        </div>
+        </Panel>
       </div>
 
-      <div className="rounded-2xl border border-border bg-card p-6">
-        <h2 className="font-display text-sm font-semibold">Team Speed &amp; Spin Trend</h2>
-        <div className="mt-2 h-64">
+      <Panel title="Team speed &amp; spin" description="Daily averages across the roster.">
+        <div className="h-64">
           <ChartErrorBoundary>
             {trendData.length === 0 ? (
               <p className="flex h-full items-center justify-center text-sm text-muted-foreground">Not enough data yet.</p>
             ) : (
               <ResponsiveContainer width="100%" height="100%" minWidth={0} minHeight={0}>
                 <LineChart data={trendData}>
-                  <CartesianGrid strokeDasharray="3 3" stroke="hsl(155,16%,18%)" />
-                  <XAxis dataKey="day" tick={{ fontSize: 11 }} stroke="hsl(155,10%,55%)" />
-                  <YAxis tick={{ fontSize: 11 }} stroke="hsl(155,10%,55%)" />
-                  <Tooltip contentStyle={{ background: "hsl(var(--card))", border: "1px solid hsl(var(--border))", borderRadius: 8, fontSize: 12 }} />
+                  <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" />
+                  <XAxis dataKey="day" tick={{ fontSize: 11 }} stroke="hsl(var(--muted-foreground))" />
+                  <YAxis tick={{ fontSize: 11 }} stroke="hsl(var(--muted-foreground))" />
+                  <Tooltip contentStyle={{ background: "hsl(var(--card))", border: "1px solid hsl(var(--border))", borderRadius: 12, fontSize: 12, color: "hsl(var(--foreground))" }} />
                   <Legend wrapperStyle={{ fontSize: 12 }} />
                   <Line type="monotone" dataKey="avgSpeed" name="Avg Speed" stroke="hsl(82,100%,64%)" strokeWidth={2.5} dot={false} isAnimationActive={false} />
                   <Line type="monotone" dataKey="avgSpin" name="Avg Spin" stroke="hsl(217,91%,60%)" strokeWidth={2.5} dot={false} isAnimationActive={false} />
@@ -294,7 +315,7 @@ export default function CoachDashboard() {
             )}
           </ChartErrorBoundary>
         </div>
-      </div>
+      </Panel>
 
       <PlayerDetailModal player={detailPlayer} onClose={() => setDetailPlayer(null)} onUpdated={loadAll} />
     </div>

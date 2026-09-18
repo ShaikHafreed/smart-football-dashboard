@@ -1,11 +1,14 @@
 import { useEffect, useRef, useState } from "react";
-import { Gauge, RotateCw, Zap, Ruler, Activity, Clock } from "lucide-react";
+import { Link } from "react-router-dom";
+import { Gauge, RotateCw, Zap, Ruler, Activity, RadioTower, ArrowRight } from "lucide-react";
 
 import SensorCard from "../components/dashboard/SensorCard";
 import ConnectionPanel from "../components/dashboard/ConnectionPanel";
 import PerformanceChart from "../components/dashboard/PerformanceChart";
 import FootballAnimation from "../components/dashboard/FootballAnimation";
 import StatsSummaryBar from "../components/dashboard/StatsSummaryBar";
+import PageHeader from "../components/common/PageHeader";
+import StateBlock from "../components/common/StateBlock";
 import { supabase } from "../lib/supabaseClient";
 
 export default function Dashboard() {
@@ -131,61 +134,68 @@ export default function Dashboard() {
 
   if (!activeDeviceId) {
     return (
-      <div className="mx-auto max-w-md rounded-xl border border-dashed border-border bg-card p-8 text-center animate-fadeIn">
-        <p className="font-medium">No ball paired yet</p>
-        <p className="mt-1 text-sm text-muted-foreground">
-          Head to the Devices page to pair a ball and set it active before live data shows up here.
-        </p>
-        <a href="/devices" className="mt-4 inline-block rounded-lg bg-primary px-4 py-2 text-sm font-semibold text-primary-foreground">
-          Go to Devices
-        </a>
+      <div className="animate-fadeIn space-y-6">
+        <PageHeader
+          eyebrow="Live"
+          title="Dashboard"
+          description="Pair a ball to start seeing kicks as they happen."
+        />
+        <StateBlock
+          icon={RadioTower}
+          title="No ball paired yet"
+          message="Pair a ball on the Devices page and set it active — readings appear here the moment it starts reporting."
+          action={
+            <Link to="/devices" className="btn btn-primary">
+              Go to Devices <ArrowRight aria-hidden="true" className="h-4 w-4" />
+            </Link>
+          }
+        />
       </div>
     );
   }
 
   return (
-    <div className="space-y-6 animate-fadeIn">
+    <div className="animate-fadeIn space-y-6 md:space-y-8">
 
-      {/* TITLE + SHOT BANNER */}
-      <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
-        <div>
-          <h1 className="font-display text-2xl font-semibold">Smart Analytics</h1>
-          <p className="text-sm text-muted-foreground">Live telemetry from the pitch</p>
-        </div>
+      <PageHeader
+        eyebrow="Live"
+        title="Dashboard"
+        description="Readings from the paired ball, as they land."
+        actions={
+          <Link to="/session" className="btn btn-primary">
+            <Zap aria-hidden="true" className="h-4 w-4" /> Start a session
+          </Link>
+        }
+      />
 
-        <div className="flex items-center gap-2 rounded-full border border-border bg-card px-4 py-2 text-sm">
-          <Zap className="h-4 w-4 text-primary" />
-          <span className="text-muted-foreground">Shot:</span>
-          <span className="font-medium capitalize">{data.shot}</span>
-        </div>
-      </div>
-
-      {/* SENSOR GRID + CONNECTION */}
-      <div className="grid gap-4 lg:grid-cols-4">
-        <div className="grid grid-cols-2 gap-4 lg:col-span-3">
-          <SensorCard icon={<Gauge className="h-5 w-5" />} label="Speed" value={data.speed} unit="km/h" color="bg-primary/10 text-primary" accentClass="text-primary" />
-          <SensorCard icon={<RotateCw className="h-5 w-5" />} label="Spin" value={data.spin} unit="rpm" color="bg-blue-500/10 text-blue-400" accentClass="text-blue-400" />
-          <SensorCard icon={<Zap className="h-5 w-5" />} label="Force" value={data.force} unit="N" color="bg-amber-500/10 text-amber-400" accentClass="text-amber-400" />
-          <SensorCard icon={<Ruler className="h-5 w-5" />} label="Distance" value={data.distance} unit="m" color="bg-fuchsia-500/10 text-fuchsia-400" accentClass="text-fuchsia-400" />
+      {/* MEASUREMENTS — one instrument panel, not four floating cards */}
+      <div className="grid gap-4 lg:grid-cols-4 lg:items-start">
+        <div className="hairline-grid grid-cols-2 lg:col-span-3">
+          <SensorCard icon={<Gauge className="h-5 w-5" />} label="Speed" value={data.speed} unit="km/h" accentClass="text-foreground" live={data.connected} />
+          <SensorCard icon={<RotateCw className="h-5 w-5" />} label="Spin" value={data.spin} unit="rpm" accentClass="text-foreground" live={data.connected} />
+          <SensorCard icon={<Zap className="h-5 w-5" />} label="Force" value={data.force} unit="N" accentClass="text-foreground" live={data.connected} />
+          <SensorCard icon={<Ruler className="h-5 w-5" />} label="Distance" value={data.distance} unit="m" accentClass="text-foreground" live={data.connected} />
         </div>
 
         <ConnectionPanel status={connectionStatus} onReconnect={() => window.location.reload()} />
       </div>
 
-      {/* TOTAL KICKS / LAST KICK */}
-      <div className="grid grid-cols-2 gap-4">
-        <div className="rounded-xl border border-border bg-card p-6">
-          <div className="flex items-center gap-2 text-sm text-muted-foreground">
-            <Activity className="h-4 w-4" /> Total Kicks
+      {/* SESSION SUMMARY */}
+      <div className="hairline-grid grid-cols-2">
+        <div className="flex items-center justify-between gap-4 p-5">
+          <div>
+            <p className="text-xs font-medium text-muted-foreground">Kicks this visit</p>
+            <p className="font-data mt-2 text-3xl font-semibold tabular-nums">{kickCount}</p>
           </div>
-          <p className="font-data mt-2 text-4xl font-semibold">{kickCount}</p>
+          <Activity aria-hidden="true" className="h-4 w-4 shrink-0 text-muted-foreground" />
         </div>
 
-        <div className="rounded-xl border border-border bg-card p-6">
-          <div className="flex items-center gap-2 text-sm text-muted-foreground">
-            <Clock className="h-4 w-4" /> Last Kick
+        <div className="flex items-center justify-between gap-4 p-5">
+          <div className="min-w-0">
+            <p className="text-xs font-medium text-muted-foreground">Last kick</p>
+            <p className="mt-2 truncate text-lg font-semibold capitalize">{data.shot}</p>
           </div>
-          <p className="mt-2 text-2xl font-semibold capitalize">{data.shot}</p>
+          <RadioTower aria-hidden="true" className={`h-4 w-4 shrink-0 ${data.connected ? "text-primary" : "text-muted-foreground"}`} />
         </div>
       </div>
 
@@ -196,7 +206,7 @@ export default function Dashboard() {
         />
       )}
 
-      {/* LIVE PERFORMANCE + SIGNATURE BALL FEED */}
+      {/* TREND + LAST STRIKE */}
       <div className="grid gap-4 lg:grid-cols-3">
         <div className="lg:col-span-2">
           <PerformanceChart history={chartData} />

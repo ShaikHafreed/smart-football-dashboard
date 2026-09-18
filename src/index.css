@@ -179,6 +179,141 @@ h1, h2, h3, h4, .font-display {
 }
 
 /* ============================================
+   Application primitives.
+
+   The landing page set the product's visual language; these carry it into
+   the authenticated app so the two halves read as one product. Defined as
+   classes rather than repeated utility strings, so a change to "what a
+   panel looks like" happens in one place.
+   ============================================ */
+
+/* App-wide, matching the landing's treatment. Keyboard users can always
+   see where they are. */
+:focus-visible {
+  outline: 2px solid hsl(var(--primary));
+  outline-offset: 2px;
+  border-radius: 6px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.001ms !important;
+    animation-delay: 0ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.001ms !important;
+    scroll-behavior: auto !important;
+  }
+}
+
+/* The small tracked caps used above every section title on the landing. */
+.eyebrow {
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  color: hsl(var(--muted-foreground));
+}
+
+.panel {
+  border: 1px solid hsl(var(--border));
+  background: hsl(var(--card));
+  border-radius: 1.25rem;
+}
+
+/* Cells divided by a single hairline instead of floating in a sea of
+   separate cards — the landing's measurement strip and step row. */
+.hairline-grid {
+  display: grid;
+  gap: 1px;
+  background: hsl(var(--border));
+  border: 1px solid hsl(var(--border));
+  border-radius: 1.25rem;
+  overflow: hidden;
+}
+.hairline-grid > * {
+  background: hsl(var(--card));
+}
+
+/* Pill buttons, 44px minimum so they are comfortable on a phone. */
+.btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.5rem;
+  border-radius: 9999px;
+  font-size: 0.875rem;
+  font-weight: 600;
+  min-height: 44px;
+  padding: 0 1.25rem;
+  white-space: nowrap;
+  transition: transform 0.15s, background-color 0.15s, opacity 0.15s;
+}
+.btn:disabled {
+  opacity: 0.45;
+  pointer-events: none;
+}
+.btn-primary {
+  background: hsl(var(--primary));
+  color: hsl(var(--primary-foreground));
+}
+.btn-primary:hover {
+  transform: translateY(-1px);
+}
+.btn-quiet {
+  border: 1px solid hsl(var(--border));
+  background: hsl(var(--card));
+  color: hsl(var(--foreground));
+}
+.btn-quiet:hover {
+  background: hsl(var(--secondary));
+}
+.btn-danger {
+  border: 1px solid hsl(var(--destructive) / 0.35);
+  background: hsl(var(--destructive) / 0.12);
+  color: hsl(var(--destructive));
+}
+.btn-danger:hover {
+  background: hsl(var(--destructive) / 0.2);
+}
+.btn-sm {
+  min-height: 36px;
+  padding: 0 0.875rem;
+  font-size: 0.8125rem;
+}
+
+.field {
+  width: 100%;
+  min-height: 44px;
+  border-radius: 0.75rem;
+  border: 1px solid hsl(var(--border));
+  background: hsl(var(--background));
+  padding: 0.625rem 0.875rem;
+  font-size: 0.875rem;
+  color: hsl(var(--foreground));
+  outline: none;
+}
+.field::placeholder {
+  color: hsl(var(--muted-foreground));
+}
+.field:focus {
+  border-color: hsl(var(--primary) / 0.6);
+  box-shadow: 0 0 0 3px hsl(var(--primary) / 0.15);
+}
+
+.chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.375rem;
+  border-radius: 9999px;
+  border: 1px solid hsl(var(--border));
+  padding: 0.25rem 0.625rem;
+  font-size: 11px;
+  font-weight: 500;
+}
+
+/* ============================================
    Motion
    ============================================ */
 @keyframes fadeIn {
