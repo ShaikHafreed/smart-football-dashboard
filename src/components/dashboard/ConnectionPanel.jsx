@@ -1,67 +1,59 @@
-import React from "react";
-import { motion } from "framer-motion";
-import { Wifi, Bluetooth, Zap, AlertCircle, RefreshCw } from "lucide-react";
-import { Button } from "../../components/ui/button";
+import { RadioTower, RefreshCw, WifiOff } from "lucide-react";
 
-const STATUS_CONFIG = {
-  connected:    { label: "Connected",    dot: "bg-green-400",  text: "text-green-600",  bg: "bg-green-50 border-green-200"  },
-  mock:         { label: "Simulation",   dot: "bg-amber-400",  text: "text-amber-600",  bg: "bg-amber-50 border-amber-200"  },
-  connecting:   { label: "Connecting…",  dot: "bg-blue-400",   text: "text-blue-600",   bg: "bg-blue-50 border-blue-200"    },
-  disconnected: { label: "Disconnected", dot: "bg-slate-300",  text: "text-slate-500",  bg: "bg-slate-50 border-slate-200"  },
-  error:        { label: "Error",        dot: "bg-red-400",    text: "text-red-600",    bg: "bg-red-50 border-red-200"      },
+/**
+ * Whether the paired ball is currently reporting.
+ *
+ * This panel used to advertise a Bluetooth channel and a "Simulation"
+ * mode, neither of which exists in this system — the ball reports over
+ * Wi-Fi to the relay, and there is no mock data path. It also rendered
+ * light-mode chips (bg-green-50, border-slate-200) on a dark surface.
+ * Both are fixed: real states only, drawn from the app's own tokens.
+ */
+const STATUS = {
+  connected: {
+    label: "Reporting",
+    detail: "The ball is sending readings.",
+    dot: "bg-primary",
+    tone: "border-primary/40 bg-primary/10 text-primary",
+  },
+  disconnected: {
+    label: "Not reporting",
+    detail: "No reading in the last few seconds.",
+    dot: "bg-muted-foreground",
+    tone: "border-border bg-secondary text-muted-foreground",
+  },
 };
 
 export default function ConnectionPanel({ status = "disconnected", onReconnect }) {
-  const cfg = STATUS_CONFIG[status] || STATUS_CONFIG.disconnected;
+  const cfg = STATUS[status] || STATUS.disconnected;
+  const isConnected = status === "connected";
 
   return (
-    <motion.div
-      initial={{ opacity: 0, y: 20 }}
-      animate={{ opacity: 1, y: 0 }}
-      transition={{ delay: 0.1 }}
-      className="bg-card rounded-xl border border-border p-5 shadow-sm"
-    >
-      <div className="flex items-center justify-between mb-4">
-        <h3 className="text-sm font-semibold text-foreground">ESP32 Sensor</h3>
-        <div className={`flex items-center gap-1.5 px-2.5 py-1 rounded-full border text-xs font-medium ${cfg.bg} ${cfg.text}`}>
-          <div className={`w-1.5 h-1.5 rounded-full ${cfg.dot} ${status === "connecting" ? "animate-pulse" : ""}`} />
+    <section className="panel flex flex-col p-5" aria-label="Ball connection">
+      <div className="flex items-center justify-between gap-3">
+        <span className="flex items-center gap-2">
+          {isConnected ? (
+            <RadioTower aria-hidden="true" className="h-4 w-4 text-primary" />
+          ) : (
+            <WifiOff aria-hidden="true" className="h-4 w-4 text-muted-foreground" />
+          )}
+          <h2 className="font-display text-sm font-semibold">Ball</h2>
+        </span>
+
+        <span className={`chip ${cfg.tone}`}>
+          <span aria-hidden="true" className={`h-1.5 w-1.5 rounded-full ${cfg.dot}`} />
           {cfg.label}
-        </div>
+        </span>
       </div>
 
-      <div className="grid grid-cols-2 gap-2">
-        <div className={`flex items-center gap-2 p-3 rounded-lg border ${
-          status === "connected" ? "bg-primary/5 border-primary/20" : "bg-secondary border-border"
-        }`}>
-          <Wifi className={`w-4 h-4 ${status === "connected" ? "text-primary" : "text-muted-foreground"}`} />
-          <span className="text-xs font-medium">WiFi</span>
-        </div>
-        <div className={`flex items-center gap-2 p-3 rounded-lg border ${
-          status === "mock" ? "bg-amber-50 border-amber-200" : "bg-secondary border-border"
-        }`}>
-          <Bluetooth className={`w-4 h-4 ${status === "mock" ? "text-amber-600" : "text-muted-foreground"}`} />
-          <span className="text-xs font-medium">Bluetooth</span>
-        </div>
-      </div>
+      <p className="mt-3 text-xs leading-relaxed text-muted-foreground">{cfg.detail}</p>
 
-      {(status === "disconnected" || status === "error") && (
-        <Button
-          onClick={onReconnect}
-          size="sm"
-          variant="outline"
-          className="w-full mt-3 gap-2 rounded-lg"
-        >
-          <RefreshCw className="w-3.5 h-3.5" />
-          Reconnect
-        </Button>
+      {!isConnected && (
+        <button onClick={onReconnect} className="btn btn-quiet btn-sm mt-4 w-full">
+          <RefreshCw aria-hidden="true" className="h-3.5 w-3.5" />
+          Retry connection
+        </button>
       )}
-
-      {status === "mock" && (
-        <p className="text-xs text-amber-600 mt-3 flex items-center gap-1.5">
-          <AlertCircle className="w-3.5 h-3.5" />
-          Using simulated data (no ESP32 found)
-        </p>
-      )}
-    </motion.div>
+    </section>
   );
 }

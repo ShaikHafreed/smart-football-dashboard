@@ -1,11 +1,13 @@
 import { useEffect, useState } from "react";
 import { useNavigate, Link } from "react-router-dom";
 import { motion } from "framer-motion";
-import { Camera, Loader2, LogOut, Pencil, Users, Zap, Calendar, User, ClipboardList, Trash2 } from "lucide-react";
+import { Camera, LogOut, Pencil, Users, Zap, Calendar, User, ClipboardList, Trash2 } from "lucide-react";
 import { supabase } from "../lib/supabaseClient";
 import { useAuth } from "../lib/AuthContext";
 import { authedFetch } from "../lib/flaskClient";
 import ConfirmDialog from "../components/ConfirmDialog";
+import Panel from "../components/common/Panel";
+import StateBlock from "../components/common/StateBlock";
 
 export default function Profile() {
   const navigate = useNavigate();
@@ -125,11 +127,7 @@ export default function Profile() {
   };
 
   if (!profile) {
-    return (
-      <div className="flex items-center justify-center gap-2 p-10 text-muted-foreground">
-        <Loader2 className="h-4 w-4 animate-spin" /> Loading profile…
-      </div>
-    );
+    return <StateBlock variant="loading" title="Loading profile…" />;
   }
 
   return (
@@ -165,34 +163,32 @@ export default function Profile() {
       </div>
 
       {/* STATS ROW */}
-      <div className="grid grid-cols-3 gap-3">
+      <div className="hairline-grid grid-cols-3">
         {[
           { label: "Players", value: stats.players, icon: Users },
-          { label: "Shots Recorded", value: stats.shots, icon: Zap },
+          { label: "Shots recorded", value: stats.shots, icon: Zap },
           { label: "Age", value: calculateAge(profile.dob), icon: Calendar },
         ].map(({ label, value, icon: Icon }) => (
-          <div key={label} className="rounded-xl border border-border bg-card p-4 text-center">
-            <Icon className="mx-auto mb-2 h-4 w-4 text-primary" />
-            <p className="font-data text-2xl font-semibold">{value}</p>
-            <p className="mt-0.5 text-xs text-muted-foreground">{label}</p>
+          <div key={label} className="p-5">
+            <Icon aria-hidden="true" className="h-4 w-4 text-muted-foreground" />
+            <p className="font-data mt-3 text-2xl font-semibold tabular-nums">{value}</p>
+            <p className="mt-1.5 text-xs text-muted-foreground">{label}</p>
           </div>
         ))}
       </div>
 
       {/* DETAILS CARD */}
-      <div className="space-y-4 rounded-2xl border border-border bg-card p-6">
-        <div className="flex items-center justify-between">
-          <h2 className="font-display text-sm font-semibold">Account Details</h2>
-          {!editMode && (
-            <button
-              onClick={() => setEditMode(true)}
-              className="flex items-center gap-1.5 rounded-lg border border-border px-3 py-1.5 text-xs font-medium text-muted-foreground transition-colors hover:text-foreground"
-            >
-              <Pencil className="h-3.5 w-3.5" /> Edit
+      <Panel
+        title="Account details"
+        actions={
+          !editMode && (
+            <button onClick={() => setEditMode(true)} className="btn btn-quiet btn-sm">
+              <Pencil aria-hidden="true" className="h-3.5 w-3.5" /> Edit
             </button>
-          )}
-        </div>
-
+          )
+        }
+        bodyClassName="space-y-4"
+      >
         <div>
           <p className="text-xs text-muted-foreground">Name</p>
           {editMode ? (
@@ -200,7 +196,7 @@ export default function Profile() {
               name="full_name"
               value={profile.full_name || ""}
               onChange={handleChange}
-              className="mt-1 w-full rounded-lg border border-border bg-secondary/40 p-2.5 text-sm outline-none focus:border-primary"
+              className="field mt-1.5"
             />
           ) : (
             <p className="mt-0.5 font-medium">{profile.full_name || "Not set"}</p>
@@ -215,7 +211,7 @@ export default function Profile() {
               name="dob"
               value={profile.dob || ""}
               onChange={handleChange}
-              className="mt-1 w-full rounded-lg border border-border bg-secondary/40 p-2.5 text-sm outline-none focus:border-primary"
+              className="field mt-1.5"
             />
           ) : (
             <p className="mt-0.5 font-medium">{profile.dob || "Not set"}</p>
@@ -236,7 +232,7 @@ export default function Profile() {
                     key={value}
                     type="button"
                     onClick={() => setProfile({ ...profile, role: value })}
-                    className={`flex items-center justify-center gap-2 rounded-lg border py-2.5 text-sm font-medium transition-colors
+                    className={`flex min-h-[44px] items-center justify-center gap-2 rounded-xl border text-sm font-medium transition-colors
                       ${selected ? "border-primary/60 bg-primary/10 text-primary" : "border-border text-muted-foreground"}`}
                   >
                     <Icon className="h-3.5 w-3.5" /> {label}
@@ -248,37 +244,31 @@ export default function Profile() {
         )}
 
         {editMode && (
-          <div className="flex gap-3 pt-2">
+          <div className="flex flex-col gap-2 pt-2 sm:flex-row">
             <motion.button
               whileTap={{ scale: 0.97 }}
               onClick={handleSave}
               disabled={saving}
-              className="flex-1 rounded-lg bg-primary py-2.5 text-sm font-semibold text-primary-foreground disabled:opacity-50"
+              className="btn btn-primary flex-1"
             >
               {saving ? "Saving…" : "Save changes"}
             </motion.button>
-            <button
-              onClick={() => setEditMode(false)}
-              className="flex-1 rounded-lg border border-border py-2.5 text-sm font-medium text-muted-foreground"
-            >
+            <button onClick={() => setEditMode(false)} className="btn btn-quiet flex-1">
               Cancel
             </button>
           </div>
         )}
-      </div>
+      </Panel>
 
-      <button
-        onClick={() => setConfirmingLogout(true)}
-        className="flex w-full items-center justify-center gap-2 rounded-lg bg-destructive/10 py-3 text-sm font-medium text-destructive transition-colors hover:bg-destructive/20"
-      >
-        <LogOut className="h-4 w-4" /> Logout
+      <button onClick={() => setConfirmingLogout(true)} className="btn btn-danger w-full">
+        <LogOut aria-hidden="true" className="h-4 w-4" /> Log out
       </button>
 
       {/* DANGER ZONE */}
       <div className="space-y-3 rounded-2xl border border-destructive/30 p-6">
         <div>
           <h2 className="font-display text-sm font-semibold text-destructive">Delete account</h2>
-          <p className="mt-1 text-xs text-muted-foreground">
+          <p className="mt-1 text-xs leading-relaxed text-muted-foreground">
             Permanently deletes your account and everything tied to it — your profile, players you added,
             session history, recorded shots, and any paired devices or academy you own. This can't be undone.
           </p>
@@ -288,11 +278,8 @@ export default function Profile() {
           <p className="rounded-lg bg-destructive/10 px-3 py-2 text-xs text-destructive">{deleteError}</p>
         )}
 
-        <button
-          onClick={() => setConfirmingDelete(true)}
-          className="flex w-full items-center justify-center gap-2 rounded-lg border border-destructive/40 py-2.5 text-sm font-medium text-destructive transition-colors hover:bg-destructive/10"
-        >
-          <Trash2 className="h-4 w-4" /> Delete my account
+        <button onClick={() => setConfirmingDelete(true)} className="btn btn-danger w-full">
+          <Trash2 aria-hidden="true" className="h-4 w-4" /> Delete my account
         </button>
       </div>
 

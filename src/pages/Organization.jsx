@@ -3,6 +3,8 @@ import { motion } from "framer-motion";
 import { Building2, Copy, Check, Shield, Users } from "lucide-react";
 import { supabase } from "../lib/supabaseClient";
 import { useAuth } from "../lib/AuthContext";
+import PageHeader from "../components/common/PageHeader";
+import Panel from "../components/common/Panel";
 
 export default function Organization() {
   const { user, org, refreshOrg } = useAuth();
@@ -84,55 +86,43 @@ export default function Organization() {
   if (!org) {
     return (
       <div className="mx-auto max-w-lg space-y-6 animate-fadeIn">
-        <div>
-          <h1 className="font-display text-2xl font-semibold">Organization</h1>
-          <p className="text-sm text-muted-foreground">
-            Create an academy so every coach on your staff shares one roster, instead of each coach only
-            seeing the players they personally added.
-          </p>
-        </div>
+        <PageHeader
+          eyebrow="Setup"
+          title="Organization"
+          description="Create an academy so every coach on your staff shares one roster, instead of each coach only seeing the players they added themselves."
+        />
 
         {error && (
-          <p className="rounded-lg bg-destructive/10 px-3 py-2 text-center text-sm text-destructive">{error}</p>
+          <p role="alert" className="rounded-xl border border-destructive/40 bg-destructive/10 px-4 py-3 text-sm text-destructive">{error}</p>
         )}
 
-        <form onSubmit={handleCreate} className="space-y-3 rounded-xl border border-border bg-card p-4">
-          <h2 className="text-sm font-semibold text-muted-foreground">Create an academy</h2>
-          <div className="flex gap-2">
+        <Panel title="Create an academy" icon={Building2}>
+          <form onSubmit={handleCreate} className="flex flex-col gap-2 sm:flex-row">
+            <label htmlFor="org-name" className="sr-only">Academy name</label>
             <input
+              id="org-name"
               value={orgName}
               onChange={(e) => setOrgName(e.target.value)}
               placeholder="e.g. Riverside Football Academy"
-              className="flex-1 rounded-lg border border-border bg-background px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-primary/40"
+              className="field flex-1"
             />
-            <button
-              type="submit"
-              disabled={busy}
-              className="rounded-lg bg-primary px-4 py-2 text-sm font-semibold text-primary-foreground disabled:opacity-40"
-            >
-              Create
-            </button>
-          </div>
-        </form>
+            <button type="submit" disabled={busy} className="btn btn-primary">Create</button>
+          </form>
+        </Panel>
 
-        <form onSubmit={handleJoin} className="space-y-3 rounded-xl border border-border bg-card p-4">
-          <h2 className="text-sm font-semibold text-muted-foreground">Join an existing academy</h2>
-          <div className="flex gap-2">
+        <Panel title="Join an existing academy" icon={Users}>
+          <form onSubmit={handleJoin} className="flex flex-col gap-2 sm:flex-row">
+            <label htmlFor="join-code" className="sr-only">Invite code</label>
             <input
+              id="join-code"
               value={joinCode}
               onChange={(e) => setJoinCode(e.target.value)}
               placeholder="Invite code"
-              className="flex-1 rounded-lg border border-border bg-background px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-primary/40"
+              className="field font-data flex-1 tracking-[0.2em]"
             />
-            <button
-              type="submit"
-              disabled={busy}
-              className="rounded-lg border border-border px-4 py-2 text-sm font-medium text-muted-foreground hover:bg-secondary/60 disabled:opacity-40"
-            >
-              Join
-            </button>
-          </div>
-        </form>
+            <button type="submit" disabled={busy} className="btn btn-quiet">Join</button>
+          </form>
+        </Panel>
       </div>
     );
   }
@@ -151,26 +141,20 @@ export default function Organization() {
         </div>
       </div>
 
-      <div className="rounded-xl border border-border bg-card p-4">
-        <h2 className="mb-2 text-sm font-semibold text-muted-foreground">Invite code</h2>
-        <p className="mb-3 text-xs text-muted-foreground">
-          Share this with another coach — they enter it on their own Organization page to join and see this
-          same roster.
-        </p>
-        <div className="flex items-center justify-between rounded-lg border border-border bg-secondary/40 px-4 py-3">
-          <span className="font-data text-lg tracking-wider">{org.invite_code}</span>
-          <button onClick={copyCode} className="flex items-center gap-1.5 text-xs font-medium text-primary">
-            {copied ? <Check className="h-3.5 w-3.5" /> : <Copy className="h-3.5 w-3.5" />}
+      <Panel
+        title="Invite code"
+        description="Share this with another coach — they enter it on their own Organization page to join this roster."
+      >
+        <div className="flex items-center justify-between gap-3 rounded-xl border border-border bg-secondary/40 px-4 py-3">
+          <span className="font-data text-lg tracking-[0.2em]">{org.invite_code}</span>
+          <button onClick={copyCode} className="btn btn-quiet btn-sm">
+            {copied ? <Check aria-hidden="true" className="h-3.5 w-3.5" /> : <Copy aria-hidden="true" className="h-3.5 w-3.5" />}
             {copied ? "Copied" : "Copy"}
           </button>
         </div>
-      </div>
+      </Panel>
 
-      <div className="rounded-xl border border-border bg-card p-4">
-        <div className="mb-3 flex items-center gap-2">
-          <Users className="h-4 w-4 text-muted-foreground" />
-          <h2 className="text-sm font-semibold text-muted-foreground">Coaches</h2>
-        </div>
+      <Panel title="Coaches" icon={Users} actions={<span className="text-xs text-muted-foreground">{members.length}</span>}>
         <div className="space-y-2">
           {members.map((m) => (
             <motion.div
@@ -190,7 +174,7 @@ export default function Organization() {
             </motion.div>
           ))}
         </div>
-      </div>
+      </Panel>
     </div>
   );
 }

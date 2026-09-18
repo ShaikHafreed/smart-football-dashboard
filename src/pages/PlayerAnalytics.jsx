@@ -1,12 +1,15 @@
 import { useEffect, useMemo, useState } from "react";
-import { motion } from "framer-motion";
-import { Gauge, RotateCw, Zap, Ruler, ListChecks, Loader2 } from "lucide-react";
+import { Link } from "react-router-dom";
+import { Gauge, RotateCw, Zap, Ruler, ListChecks } from "lucide-react";
 import { supabase } from "../lib/supabaseClient";
 import { useAuth } from "../lib/AuthContext";
 import PerformanceChart from "../components/dashboard/PerformanceChart";
 import SessionList from "../components/performance/SessionList";
 import { classifyForce } from "../utils/sensorUtils";
 import { fetchPlayerShotStats, fetchRecentShots, mergeShotStats } from "../lib/analyticsQueries";
+import PageHeader from "../components/common/PageHeader";
+import Panel from "../components/common/Panel";
+import StateBlock from "../components/common/StateBlock";
 
 const DRILL_LIBRARY = {
   low: [
@@ -109,49 +112,55 @@ export default function PlayerAnalytics() {
   };
 
   if (loading) {
-    return (
-      <div className="flex items-center justify-center gap-2 p-10 text-muted-foreground">
-        <Loader2 className="h-4 w-4 animate-spin" /> Loading your performance…
-      </div>
-    );
+    return <StateBlock variant="loading" title="Loading your performance…" />;
   }
 
   return (
     <div className="space-y-6 animate-fadeIn">
-      <div>
-        <h1 className="font-display text-2xl font-semibold">My Performance</h1>
-        <p className="text-sm text-muted-foreground">Personal bests, trends, and drills tailored to your data.</p>
-      </div>
+      <PageHeader
+        eyebrow="Overview"
+        title="My Performance"
+        description={
+          stats.shotCount
+            ? `Personal bests across ${stats.shotCount.toLocaleString()} recorded kick${stats.shotCount === 1 ? "" : "s"}.`
+            : "Personal bests, trends and drills, drawn from your own kicks."
+        }
+        actions={
+          <Link to="/session" className="btn btn-primary">
+            <Zap aria-hidden="true" className="h-4 w-4" /> Start a session
+          </Link>
+        }
+      />
 
       {error && (
-        <p className="rounded-lg bg-destructive/10 px-3 py-2 text-center text-sm text-destructive">{error}</p>
+        <p role="alert" className="rounded-xl border border-destructive/40 bg-destructive/10 px-4 py-3 text-sm text-destructive">{error}</p>
       )}
 
       {stats.shotCount === 0 ? (
-        <div className="rounded-xl border border-dashed border-border p-10 text-center text-muted-foreground">
-          No shots recorded yet — head to Session and start recording to see your stats here.
-        </div>
+        <StateBlock
+          icon={Gauge}
+          title="No kicks recorded yet"
+          message="Start a session with a paired ball and your bests, trend and drills will build up here."
+          action={<Link to="/session" className="btn btn-primary">Go to Session</Link>}
+        />
       ) : (
         <>
           {/* PERSONAL BESTS */}
-          <div className="grid grid-cols-2 gap-4 lg:grid-cols-4">
+          <div className="hairline-grid grid-cols-2 lg:grid-cols-4">
             {[
-              { label: "Best Speed", value: bests.speed, unit: "km/h", icon: Gauge, color: "text-primary" },
-              { label: "Best Spin", value: bests.spin, unit: "rpm", icon: RotateCw, color: "text-blue-400" },
-              { label: "Best Force", value: bests.force, unit: "N", icon: Zap, color: "text-amber-400" },
-              { label: "Best Distance", value: bests.distance, unit: "m", icon: Ruler, color: "text-fuchsia-400" },
-            ].map(({ label, value, unit, icon: Icon, color }, i) => (
-              <motion.div
-                key={label}
-                initial={{ opacity: 0, y: 8 }}
-                animate={{ opacity: 1, y: 0 }}
-                transition={{ delay: i * 0.05 }}
-                className="rounded-xl border border-border bg-card p-5"
-              >
-                <Icon className={`h-4 w-4 ${color}`} />
-                <p className="font-data mt-3 text-2xl font-semibold">{value}<span className="ml-1 text-sm font-normal text-muted-foreground">{unit}</span></p>
-                <p className="mt-0.5 text-xs text-muted-foreground">{label}</p>
-              </motion.div>
+              { label: "Best speed", value: bests.speed, unit: "km/h", icon: Gauge },
+              { label: "Best spin", value: bests.spin, unit: "rpm", icon: RotateCw },
+              { label: "Best force", value: bests.force, unit: "N", icon: Zap },
+              { label: "Best distance", value: bests.distance, unit: "m", icon: Ruler },
+            ].map(({ label, value, unit, icon: Icon }) => (
+              <div key={label} className="p-5">
+                <Icon aria-hidden="true" className="h-4 w-4 text-muted-foreground" />
+                <p className="font-data mt-3 text-3xl font-semibold leading-none tabular-nums">
+                  {value}
+                  <span className="ml-1.5 text-sm font-normal text-muted-foreground">{unit}</span>
+                </p>
+                <p className="mt-2 text-sm font-medium text-muted-foreground">{label}</p>
+              </div>
             ))}
           </div>
 
@@ -159,20 +168,16 @@ export default function PlayerAnalytics() {
           <PerformanceChart history={history} />
 
           {/* PRACTICE TASKS */}
-          <div className="rounded-2xl border border-border bg-card p-6">
-            <div className="mb-1 flex items-center gap-2">
-              <ListChecks className="h-4 w-4 text-primary" />
-              <h2 className="font-display text-sm font-semibold">Suggested Practice</h2>
-            </div>
-            <p className="mb-4 text-xs text-muted-foreground capitalize">
-              Based on your {level} force output — check off drills as you complete them.
-            </p>
-
+          <Panel
+            title="Suggested practice"
+            icon={ListChecks}
+            description={`Matched to your ${level} force output — check drills off as you complete them.`}
+          >
             <div className="space-y-2">
               {drills.map((drill) => (
                 <label
                   key={drill}
-                  className="flex cursor-pointer items-center gap-3 rounded-lg border border-border bg-secondary/30 px-4 py-3 text-sm"
+                  className="flex min-h-[48px] cursor-pointer items-center gap-3 rounded-xl border border-border bg-secondary/30 px-4 py-3 text-sm transition-colors hover:border-primary/40"
                 >
                   <input
                     type="checkbox"
@@ -184,11 +189,11 @@ export default function PlayerAnalytics() {
                 </label>
               ))}
             </div>
-          </div>
+          </Panel>
 
           {/* PERFORMANCE BY SESSION */}
           <div>
-            <h2 className="font-display mb-3 text-sm font-semibold">Performance by Session</h2>
+            <h2 className="font-display mb-3 text-sm font-semibold">Performance by session</h2>
             <SessionList playerIds={playerIds} />
           </div>
         </>

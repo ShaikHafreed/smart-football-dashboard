@@ -1,7 +1,6 @@
-import React, { useState } from "react";
-import { motion } from "framer-motion";
+import { useState } from "react";
 import {
-  AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Legend,
+  AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer,
 } from "recharts";
 import ChartErrorBoundary from "../ChartErrorBoundary";
 
@@ -41,26 +40,23 @@ export default function PerformanceChart({ history = [] }) {
   const gradId = gradIds[activeTab];
 
   return (
-    <motion.div
-      initial={{ opacity: 0, y: 20 }}
-      animate={{ opacity: 1, y: 0 }}
-      transition={{ delay: 0.4 }}
-      className="bg-card rounded-xl border border-border p-6 shadow-sm h-full"
-    >
-      <div className="flex items-center justify-between mb-5">
+    <section className="panel flex h-full flex-col p-5 sm:p-6" aria-label="Performance trend">
+      <div className="mb-5 flex flex-wrap items-center justify-between gap-3">
         <div>
-          <h3 className="text-sm font-semibold text-foreground">Live Performance Trend</h3>
-          <p className="text-xs text-muted-foreground mt-0.5">Last {history.length || 0} readings</p>
+          <h2 className="font-display text-sm font-semibold">Performance trend</h2>
+          <p className="mt-0.5 text-xs text-muted-foreground">
+            {history.length ? `Last ${history.length} reading${history.length === 1 ? "" : "s"}` : "No readings yet"}
+          </p>
         </div>
-        <div className="flex bg-secondary rounded-lg p-1 gap-1">
+        <div role="tablist" aria-label="Measurement" className="flex gap-1 rounded-full border border-border bg-secondary/50 p-1">
           {TABS.map((t) => (
             <button
               key={t}
+              role="tab"
+              aria-selected={activeTab === t}
               onClick={() => setActiveTab(t)}
-              className={`px-3 py-1.5 text-xs font-medium rounded-md transition-all ${
-                activeTab === t
-                  ? "bg-card text-foreground shadow-sm"
-                  : "text-muted-foreground hover:text-foreground"
+              className={`min-h-[36px] rounded-full px-3.5 text-xs font-medium transition-colors ${
+                activeTab === t ? "bg-card text-foreground" : "text-muted-foreground hover:text-foreground"
               }`}
             >
               {t}
@@ -71,9 +67,9 @@ export default function PerformanceChart({ history = [] }) {
 
       <div className="h-52">
         {chartData.length === 0 ? (
-          <div className="h-full flex flex-col items-center justify-center text-muted-foreground">
-            <div className="text-3xl mb-2">📡</div>
-            <p className="text-sm">Waiting for sensor data…</p>
+          <div className="flex h-full flex-col items-center justify-center gap-1 text-center text-muted-foreground">
+            <p className="text-sm font-medium text-foreground">No readings yet</p>
+            <p className="max-w-xs text-xs leading-relaxed">Kicks appear here as the paired ball reports them.</p>
           </div>
         ) : (
           <ChartErrorBoundary>
@@ -85,9 +81,9 @@ export default function PerformanceChart({ history = [] }) {
                     <stop offset="95%" stopColor={color} stopOpacity={0} />
                   </linearGradient>
                 </defs>
-                <CartesianGrid strokeDasharray="3 3" stroke="hsl(220,13%,91%)" />
-                <XAxis dataKey="time" tick={{ fontSize: 11 }} stroke="hsl(220,10%,70%)" interval="preserveStartEnd" />
-                <YAxis tick={{ fontSize: 11 }} stroke="hsl(220,10%,70%)" />
+                <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" />
+                <XAxis dataKey="time" tick={{ fontSize: 11 }} stroke="hsl(var(--muted-foreground))" interval="preserveStartEnd" />
+                <YAxis tick={{ fontSize: 11 }} stroke="hsl(var(--muted-foreground))" />
                 <Tooltip content={<CustomTooltip />} />
                 <Area
                   type="monotone"
@@ -104,6 +100,6 @@ export default function PerformanceChart({ history = [] }) {
           </ChartErrorBoundary>
         )}
       </div>
-    </motion.div>
+    </section>
   );
 }

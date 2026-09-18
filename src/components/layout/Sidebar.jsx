@@ -1,13 +1,14 @@
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { NavLink } from "react-router-dom";
-import { motion, AnimatePresence } from "framer-motion";
+import { motion, AnimatePresence, useReducedMotion } from "framer-motion";
 import {
   Trophy,
   LayoutDashboard,
   Zap,
   History as HistoryIcon,
   Settings,
-  Menu,
+  PanelLeftClose,
+  PanelLeft,
   X,
   LogOut,
   LineChart,
@@ -17,71 +18,154 @@ import {
 import { useAuth } from "../../lib/AuthContext";
 import ConfirmDialog from "../ConfirmDialog";
 
-// Coaches manage their roster from inside the Coach Dashboard itself now,
-// so there's no separate "Players" nav entry.
+// Grouped so the rail reads as "where I am / what I'm doing / my setup"
+// rather than one undifferentiated list of nine links.
 const COACH_MENU = [
-  { name: "Leaderboard", path: "/leaderboard", icon: Trophy },
-  { name: "Dashboard", path: "/dashboard", icon: LayoutDashboard },
-  { name: "Session", path: "/session", icon: Zap },
-  { name: "Devices", path: "/devices", icon: RadioTower },
-  { name: "Organization", path: "/organization", icon: Building2 },
-  { name: "History", path: "/history", icon: HistoryIcon },
-  { name: "Profile", path: "/profile", icon: Settings },
+  {
+    group: "Overview",
+    items: [
+      { name: "Dashboard", path: "/dashboard", icon: LayoutDashboard },
+      { name: "Leaderboard", path: "/leaderboard", icon: Trophy },
+    ],
+  },
+  {
+    group: "Training",
+    items: [
+      { name: "Session", path: "/session", icon: Zap },
+      { name: "History", path: "/history", icon: HistoryIcon },
+    ],
+  },
+  {
+    group: "Setup",
+    items: [
+      { name: "Devices", path: "/devices", icon: RadioTower },
+      { name: "Organization", path: "/organization", icon: Building2 },
+      { name: "Profile", path: "/profile", icon: Settings },
+    ],
+  },
 ];
 
 const PLAYER_MENU = [
-  { name: "Leaderboard", path: "/leaderboard", icon: Trophy },
-  { name: "Dashboard", path: "/dashboard", icon: LayoutDashboard },
-  { name: "My Performance", path: "/analytics", icon: LineChart },
-  { name: "Session", path: "/session", icon: Zap },
-  { name: "Devices", path: "/devices", icon: RadioTower },
-  { name: "History", path: "/history", icon: HistoryIcon },
-  { name: "Profile", path: "/profile", icon: Settings },
+  {
+    group: "Overview",
+    items: [
+      { name: "Dashboard", path: "/dashboard", icon: LayoutDashboard },
+      { name: "My Performance", path: "/analytics", icon: LineChart },
+      { name: "Leaderboard", path: "/leaderboard", icon: Trophy },
+    ],
+  },
+  {
+    group: "Training",
+    items: [
+      { name: "Session", path: "/session", icon: Zap },
+      { name: "History", path: "/history", icon: HistoryIcon },
+    ],
+  },
+  {
+    group: "Setup",
+    items: [
+      { name: "Devices", path: "/devices", icon: RadioTower },
+      { name: "Profile", path: "/profile", icon: Settings },
+    ],
+  },
 ];
+
+function BrandMark({ collapsed }) {
+  return (
+    <span className="flex items-center gap-2.5">
+      <span aria-hidden="true" className="text-xl leading-none">⚽</span>
+      {!collapsed && (
+        <span className="font-display text-[15px] font-semibold tracking-tight">Smart Football AI</span>
+      )}
+    </span>
+  );
+}
 
 function NavItems({ collapsed, onNavigate, role }) {
   const menu = role === "coach" ? COACH_MENU : PLAYER_MENU;
+
   return (
-    <nav className="space-y-1">
-      {menu.map((item) => {
-        const Icon = item.icon;
-        return (
-          <NavLink
-            key={item.path}
-            to={item.path}
-            onClick={onNavigate}
-            className={({ isActive }) =>
-              `group relative flex items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium transition-colors
-              ${isActive
-                ? "bg-secondary text-foreground"
-                : "text-muted-foreground hover:bg-secondary/60 hover:text-foreground"}`
-            }
-          >
-            {({ isActive }) => (
-              <>
-                <span
-                  className={`absolute left-0 top-1/2 h-5 w-0.5 -translate-y-1/2 rounded-full bg-primary transition-opacity
-                    ${isActive ? "opacity-100" : "opacity-0"}`}
-                />
-                <Icon className="h-[18px] w-[18px] shrink-0" />
-                {!collapsed && <span>{item.name}</span>}
-              </>
-            )}
-          </NavLink>
-        );
-      })}
+    <nav aria-label="Sections" className="space-y-6">
+      {menu.map(({ group, items }) => (
+        <div key={group}>
+          {!collapsed && <p className="eyebrow px-3 pb-2">{group}</p>}
+          <ul className="space-y-0.5">
+            {items.map((item) => {
+              const Icon = item.icon;
+              return (
+                <li key={item.path}>
+                  <NavLink
+                    to={item.path}
+                    onClick={onNavigate}
+                    title={collapsed ? item.name : undefined}
+                    className={({ isActive }) =>
+                      `group relative flex min-h-[44px] items-center gap-3 rounded-xl px-3 text-sm font-medium transition-colors
+                      ${collapsed ? "justify-center" : ""}
+                      ${isActive
+                        ? "bg-secondary text-foreground"
+                        : "text-muted-foreground hover:bg-secondary/60 hover:text-foreground"}`
+                    }
+                  >
+                    {({ isActive }) => (
+                      <>
+                        <span
+                          aria-hidden="true"
+                          className={`absolute left-0 top-1/2 h-5 w-0.5 -translate-y-1/2 rounded-full bg-primary transition-opacity
+                            ${isActive ? "opacity-100" : "opacity-0"}`}
+                        />
+                        <Icon aria-hidden="true" className={`h-[18px] w-[18px] shrink-0 ${isActive ? "text-primary" : ""}`} />
+                        {!collapsed && <span>{item.name}</span>}
+                        {collapsed && <span className="sr-only">{item.name}</span>}
+                      </>
+                    )}
+                  </NavLink>
+                </li>
+              );
+            })}
+          </ul>
+        </div>
+      ))}
     </nav>
   );
 }
 
 export default function Sidebar({ collapsed, onToggleCollapse, mobileOpen, onCloseMobile }) {
-  const { signOut, role } = useAuth();
+  const { signOut, role, profile, user } = useAuth();
   const [confirmingLogout, setConfirmingLogout] = useState(false);
+  const reduceMotion = useReducedMotion();
+  const drawerRef = useRef(null);
+
+  // Escape closes the drawer, and focus moves into it when it opens —
+  // previously it could only be dismissed by tapping the scrim, which a
+  // keyboard user cannot do.
+  useEffect(() => {
+    if (!mobileOpen) return;
+
+    const onKeyDown = (e) => {
+      if (e.key === "Escape") onCloseMobile();
+    };
+    document.addEventListener("keydown", onKeyDown);
+    drawerRef.current?.querySelector("a, button")?.focus();
+
+    return () => document.removeEventListener("keydown", onKeyDown);
+  }, [mobileOpen, onCloseMobile]);
 
   const handleLogout = async () => {
     await signOut();
     window.location.href = "/login";
   };
+
+  const identity = (
+    <div className="flex items-center gap-2.5 rounded-xl border border-border bg-secondary/30 p-2.5">
+      <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-primary/15 text-xs font-semibold uppercase text-primary">
+        {(profile?.full_name || user?.email || "?").slice(0, 1)}
+      </span>
+      <span className="min-w-0">
+        <span className="block truncate text-xs font-medium">{profile?.full_name || user?.email}</span>
+        <span className="block text-[11px] capitalize text-muted-foreground">{role}</span>
+      </span>
+    </div>
+  );
 
   return (
     <>
@@ -96,83 +180,89 @@ export default function Sidebar({ collapsed, onToggleCollapse, mobileOpen, onClo
 
       {/* Desktop rail */}
       <aside
-        className={`hidden md:flex flex-col justify-between border-r border-border bg-card transition-[width] duration-200
+        className={`hidden flex-col justify-between border-r border-border bg-card transition-[width] duration-200 md:flex
           ${collapsed ? "w-[76px]" : "w-64"}`}
       >
-        <div>
-          <div className={`flex items-center gap-2 px-4 py-5 ${collapsed ? "justify-center px-0" : ""}`}>
-            <span className="text-2xl">⚽</span>
-            {!collapsed && (
-              <span className="font-display text-lg font-semibold tracking-tight">Smart Ball</span>
-            )}
+        <div className="min-h-0 overflow-y-auto">
+          <div className={`flex items-center px-4 py-5 ${collapsed ? "justify-center px-0" : ""}`}>
+            <BrandMark collapsed={collapsed} />
           </div>
 
-          <div className="px-3">
+          <div className="px-3 pb-4">
             <NavItems collapsed={collapsed} role={role} />
           </div>
         </div>
 
-        <div className="space-y-3 p-3">
-          <button
-            onClick={onToggleCollapse}
-            className="flex w-full items-center justify-center gap-2 rounded-lg border border-border py-2 text-muted-foreground hover:text-foreground hover:bg-secondary/60 transition-colors"
-            aria-label={collapsed ? "Expand sidebar" : "Collapse sidebar"}
-          >
-            <Menu className="h-4 w-4" />
-          </button>
+        <div className="space-y-3 border-t border-border p-3">
+          {!collapsed && identity}
 
-          <button
-            onClick={() => setConfirmingLogout(true)}
-            className={`flex w-full items-center gap-2 rounded-lg bg-destructive/10 px-3 py-2.5 text-sm font-medium text-destructive hover:bg-destructive/20 transition-colors
-              ${collapsed ? "justify-center" : ""}`}
-          >
-            <LogOut className="h-4 w-4" />
-            {!collapsed && "Logout"}
-          </button>
+          <div className={`flex gap-2 ${collapsed ? "flex-col" : ""}`}>
+            <button
+              onClick={onToggleCollapse}
+              aria-label={collapsed ? "Expand sidebar" : "Collapse sidebar"}
+              className="btn btn-quiet btn-sm flex-1"
+            >
+              {collapsed ? <PanelLeft className="h-4 w-4" /> : <PanelLeftClose className="h-4 w-4" />}
+              {!collapsed && <span className="text-xs">Collapse</span>}
+            </button>
+
+            <button
+              onClick={() => setConfirmingLogout(true)}
+              aria-label="Log out"
+              className="btn btn-danger btn-sm flex-1"
+            >
+              <LogOut className="h-4 w-4" />
+              {!collapsed && <span className="text-xs">Log out</span>}
+            </button>
+          </div>
         </div>
       </aside>
 
-      {/* Mobile off-canvas drawer */}
+      {/* Mobile drawer */}
       <AnimatePresence>
         {mobileOpen && (
           <>
             <motion.div
-              initial={{ opacity: 0 }}
+              initial={reduceMotion ? false : { opacity: 0 }}
               animate={{ opacity: 1 }}
-              exit={{ opacity: 0 }}
+              exit={reduceMotion ? { opacity: 1 } : { opacity: 0 }}
               onClick={onCloseMobile}
               className="fixed inset-0 z-40 bg-black/60 md:hidden"
             />
             <motion.aside
-              initial={{ x: "-100%" }}
+              ref={drawerRef}
+              role="dialog"
+              aria-modal="true"
+              aria-label="Navigation"
+              initial={reduceMotion ? false : { x: "-100%" }}
               animate={{ x: 0 }}
-              exit={{ x: "-100%" }}
+              exit={reduceMotion ? { x: 0 } : { x: "-100%" }}
               transition={{ type: "tween", duration: 0.25, ease: [0.16, 1, 0.3, 1] }}
-              className="fixed inset-y-0 left-0 z-50 flex w-72 flex-col justify-between border-r border-border bg-card p-3 md:hidden"
+              className="fixed inset-y-0 left-0 z-50 flex w-[17rem] flex-col justify-between border-r border-border bg-card md:hidden"
             >
-              <div>
-                <div className="flex items-center justify-between px-2 py-3">
-                  <span className="flex items-center gap-2 font-display text-lg font-semibold">
-                    ⚽ Smart Ball
-                  </span>
+              <div className="min-h-0 overflow-y-auto">
+                <div className="flex items-center justify-between px-4 py-4">
+                  <BrandMark />
                   <button
                     onClick={onCloseMobile}
-                    className="rounded-lg p-1.5 text-muted-foreground hover:bg-secondary/60"
                     aria-label="Close menu"
+                    className="flex h-10 w-10 items-center justify-center rounded-lg text-muted-foreground hover:bg-secondary/60"
                   >
                     <X className="h-5 w-5" />
                   </button>
                 </div>
-                <NavItems collapsed={false} onNavigate={onCloseMobile} role={role} />
+
+                <div className="px-3 pb-4">
+                  <NavItems collapsed={false} onNavigate={onCloseMobile} role={role} />
+                </div>
               </div>
 
-              <button
-                onClick={() => setConfirmingLogout(true)}
-                className="flex w-full items-center gap-2 rounded-lg bg-destructive/10 px-3 py-2.5 text-sm font-medium text-destructive hover:bg-destructive/20 transition-colors"
-              >
-                <LogOut className="h-4 w-4" />
-                Logout
-              </button>
+              <div className="space-y-3 border-t border-border p-3">
+                {identity}
+                <button onClick={() => setConfirmingLogout(true)} className="btn btn-danger w-full">
+                  <LogOut className="h-4 w-4" /> Log out
+                </button>
+              </div>
             </motion.aside>
           </>
         )}

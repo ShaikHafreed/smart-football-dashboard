@@ -1,21 +1,25 @@
-import React from "react";
-import { motion } from "framer-motion";
 import { TrendingUp, TrendingDown, Minus } from "lucide-react";
 
+/** Change since the previous kick, per measurement. */
 function StatItem({ label, value, unit, prev }) {
-  const diff = prev ? value - prev : 0;
+  const diff = prev == null ? 0 : value - prev;
   const Icon = diff > 0 ? TrendingUp : diff < 0 ? TrendingDown : Minus;
-  const color = diff > 0 ? "text-green-500" : diff < 0 ? "text-red-400" : "text-muted-foreground";
+  const tone = diff > 0 ? "text-primary" : diff < 0 ? "text-warn" : "text-muted-foreground";
 
   return (
-    <div className="flex flex-col items-center gap-0.5 px-6">
-      <p className="text-xs text-muted-foreground font-medium">{label}</p>
-      <p className="text-lg font-bold text-foreground">
-        {value} <span className="text-xs font-normal text-muted-foreground">{unit}</span>
-      </p>
-      <div className={`flex items-center gap-0.5 text-xs ${color}`}>
-        <Icon className="w-3 h-3" />
-        {diff !== 0 ? Math.abs(diff) : "—"}
+    <div className="flex items-center justify-between gap-4 p-4 sm:flex-col sm:items-start sm:gap-1 sm:p-5">
+      <p className="text-xs font-medium text-muted-foreground">{label}</p>
+
+      <div className="flex items-baseline gap-2 sm:flex-col sm:items-start sm:gap-1">
+        <p className="font-data text-xl font-semibold tabular-nums">
+          {value}
+          <span className="ml-1 text-xs font-normal text-muted-foreground">{unit}</span>
+        </p>
+        <span className={`flex items-center gap-1 text-xs ${tone}`}>
+          <Icon aria-hidden="true" className="h-3 w-3" />
+          {diff !== 0 ? Math.abs(Math.round(diff * 10) / 10) : "no change"}
+          <span className="sr-only">since the previous kick</span>
+        </span>
       </div>
     </div>
   );
@@ -23,14 +27,10 @@ function StatItem({ label, value, unit, prev }) {
 
 export default function StatsSummaryBar({ current, previous }) {
   return (
-    <motion.div
-      initial={{ opacity: 0, y: -8 }}
-      animate={{ opacity: 1, y: 0 }}
-      className="bg-card rounded-xl border border-border shadow-sm flex flex-wrap divide-x divide-border overflow-hidden"
-    >
-      <StatItem label="Kick Force" value={current.kickForce} unit="N"    prev={previous?.kickForce} />
-      <StatItem label="Ball Speed" value={current.ballSpeed} unit="km/h" prev={previous?.ballSpeed} />
-      <StatItem label="Spin Rate"  value={current.spinRate}  unit="RPM"  prev={previous?.spinRate}  />
-    </motion.div>
+    <div className="hairline-grid grid-cols-1 sm:grid-cols-3" aria-label="Change since the previous kick">
+      <StatItem label="Force" value={current.kickForce} unit="N" prev={previous?.kickForce} />
+      <StatItem label="Speed" value={current.ballSpeed} unit="km/h" prev={previous?.ballSpeed} />
+      <StatItem label="Spin" value={current.spinRate} unit="rpm" prev={previous?.spinRate} />
+    </div>
   );
 }
