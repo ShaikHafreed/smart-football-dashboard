@@ -1,5 +1,6 @@
 import { BrowserRouter, Routes, Route, Navigate } from "react-router-dom";
 
+import Landing from "./pages/Landing";
 import Login from "./pages/Login";
 import Legal from "./pages/Legal";
 import DashboardRouter from "./pages/DashboardRouter";
@@ -25,8 +26,13 @@ export default function App() {
       <BrowserRouter>
         <Routes>
 
-          {/* 🔐 AUTH FLOW */}
-          <Route path="/" element={<Navigate to="/login" />} />
+          {/* 🌍 PUBLIC */}
+          {/* "/" used to redirect straight to /login, so an unauthenticated
+              visitor was asked to sign in before being told what this is.
+              It is now the public landing page; a signed-in visitor still
+              sees it, with its call to action pointing at their dashboard
+              rather than at sign-up. */}
+          <Route path="/" element={<Landing />} />
           <Route path="/login" element={<Login />} />
           <Route path="/legal" element={<Legal />} />
           <Route

@@ -38,3 +38,4 @@ backend/firmware_releases/*.bin
 *.sln
 *.sw?
 .vercel
+.gstack/
