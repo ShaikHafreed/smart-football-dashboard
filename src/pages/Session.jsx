@@ -284,10 +284,10 @@ export default function Session() {
       {running && (
         <div className="hairline-grid grid-cols-2 sm:grid-cols-4" aria-label="Latest reading">
           {[
-            { icon: Gauge, label: "Speed", value: reading.speed, unit: "km/h" },
+            { icon: Gauge, label: "Speed index", value: reading.speed, unit: "" },
             { icon: RotateCw, label: "Spin", value: reading.spin, unit: "rpm" },
-            { icon: Zap, label: "Force", value: reading.force, unit: "N" },
-            { icon: Ruler, label: "Distance", value: reading.distance, unit: "m" },
+            { icon: Zap, label: "Impact", value: reading.force, unit: "g" },
+            { icon: Ruler, label: "Carry index", value: reading.distance, unit: "" },
           ].map(({ icon: Icon, label, value, unit }) => (
             <div key={label} className="p-5">
               <Icon aria-hidden="true" className="h-4 w-4 text-muted-foreground" />

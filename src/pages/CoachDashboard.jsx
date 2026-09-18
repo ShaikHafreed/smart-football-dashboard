@@ -224,7 +224,7 @@ export default function CoachDashboard() {
                     >
                       <span className="block truncate">{p.name}</span>
                       <span className="font-data mt-1 block text-xs font-normal text-muted-foreground">
-                        {p.totalShots} shot{p.totalShots === 1 ? "" : "s"} · best {p.bestSpeed} km/h · {p.sessionCount} session{p.sessionCount === 1 ? "" : "s"}
+                        {p.totalShots} shot{p.totalShots === 1 ? "" : "s"} · best speed index {p.bestSpeed} · {p.sessionCount} session{p.sessionCount === 1 ? "" : "s"}
                       </span>
                     </button>
                     <button

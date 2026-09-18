@@ -1626,3 +1626,116 @@ class TestAnalyticsMetricDefinitions:
 
     def test_rollups_exclude_rows_no_one_can_own(self):
         assert self.sql.count("where player_id is not null") >= 2
+
+
+# ==========================================
+# Measurement honesty
+#
+# The firmware cannot be compiled here, so these guard the properties that
+# decide whether a number shown to a player means anything: that the sensor
+# is configured for the range a kick actually produces, that the impact is
+# sampled rather than glimpsed, and above all that no fabricated
+# calibration coefficient has been switched on.
+# ==========================================
+
+class TestFirmwareMeasurement:
+    def setup_method(self):
+        self.sketch = _read_project_file("firmware", "smart_football", "smart_football.ino")
+        self.calibration = _read_project_file("firmware", "smart_football", "calibration.h")
+
+    def test_calibration_layer_exists_and_is_used(self):
+        assert '#include "calibration.h"' in self.sketch
+
+    def test_sensor_ranges_are_set_for_a_kick(self):
+        """Left at the power-on defaults of +/-2 g and +/-250 deg/s, every
+        real strike saturated and reported the same number."""
+        assert "setFullScaleAccelRange(MPU6050_ACCEL_FS_16)" in self.sketch
+        assert "setFullScaleGyroRange(MPU6050_GYRO_FS_2000)" in self.sketch
+
+    def test_datasheet_sensitivities_match_those_ranges(self):
+        # MPU6050: 2048 LSB/g at +/-16 g, 16.4 LSB per deg/s at +/-2000 deg/s.
+        assert "ACCEL_LSB_PER_G          2048.0f" in self.calibration
+        assert "GYRO_LSB_PER_DPS         16.4f" in self.calibration
+        assert "ACCEL_RANGE_G            16.0f" in self.calibration
+        assert "GYRO_RANGE_DPS           2000.0f" in self.calibration
+
+    def test_no_calibration_is_claimed_that_has_not_been_measured(self):
+        """The whole point of the layer: a coefficient nobody measured must
+        not be switched on to make the UI show a physical unit."""
+        assert "#define SPEED_CALIBRATED         0" in self.calibration
+        assert "#define FORCE_NEWTONS_CALIBRATED 0" in self.calibration
+
+    def test_placeholder_coefficients_are_not_invented(self):
+        for placeholder in ("SPEED_MODEL_GAIN         0.0f",
+                            "SPEED_MODEL_OFFSET       0.0f",
+                            "BALL_MASS_KG             0.0f"):
+            assert placeholder in self.calibration, placeholder
+
+    def test_the_old_arbitrary_divisors_are_gone(self):
+        """abs(ax)/500 was not a speed, and abs(ay)/500 was not a force."""
+        code = chr(10).join(l for l in self.sketch.splitlines() if not l.strip().startswith("//"))
+        assert "abs(ax) / 500.0" not in code
+        assert "abs(gz) / 100.0" not in code
+        assert "abs(ay) / 500.0" not in code
+
+    def test_impact_is_sampled_over_a_window(self):
+        """Contact lasts milliseconds; one sample taken whenever the loop
+        arrived almost never contained it."""
+        assert "captureImpact" in self.sketch
+        assert "IMPACT_WINDOW_MS" in self.sketch
+        assert "IMPACT_MIN_SAMPLES" in self.sketch
+
+    def test_peaks_use_the_whole_vector_not_one_axis(self):
+        assert "(long)ax * ax + (long)ay * ay + (long)az * az" in self.sketch
+        assert "(long)gx * gx + (long)gy * gy + (long)gz * gz" in self.sketch
+
+    def test_spin_is_converted_to_rpm_by_the_datasheet_route(self):
+        """Counts -> deg/s is the datasheet sensitivity, deg/s -> rpm is /6.
+        No calibration is involved, which is why spin may carry a unit."""
+        assert "GYRO_LSB_PER_DPS) / 6.0f" in self.sketch
+
+    def test_acceleration_is_reported_in_g_not_newtons(self):
+        assert "ACCEL_LSB_PER_G" in self.sketch
+        code = chr(10).join(l for l in self.sketch.splitlines() if not l.strip().startswith("//"))
+        assert "BALL_MASS_KG *" not in code  # no force in newtons while mass is unmeasured
+
+    def test_saturation_is_reported_rather_than_hidden(self):
+        assert "accelSaturated" in self.sketch
+        assert "gyroSaturated" in self.sketch
+        assert "AXIS_SATURATION_COUNTS" in self.calibration
+
+    def test_carry_is_marked_as_derived_not_measured(self):
+        assert "DERIVED_CARRY_FACTOR" in self.sketch
+        assert "NO INFORMATION" in self.calibration
+
+    def test_the_required_experiments_are_written_down(self):
+        """A placeholder is only honest if the way to replace it is stated."""
+        assert "CALIBRATION PROCEDURE" in self.calibration
+        assert "radar gun" in self.calibration
+
+    def test_api_field_order_is_unchanged(self):
+        """speed, spin, force, distance - the backend, database and stored
+        history stay compatible; only what each field carries changed."""
+        assert "sendReading(impact.speedIndex, impact.peakRpm, impact.peakG, impact.derivedCarry)" in self.sketch
+        assert "bool sendOne(float speed, float spin, float force, float distance)" in self.sketch
+
+
+class TestBackendBoundsStillFitTheNewValues:
+    """The relay clamps every reading. These are the ranges the firmware can
+    now actually produce, so a legitimate kick must not be clipped."""
+
+    def test_spin_in_rpm_fits_the_bound(self):
+        # +/-2000 deg/s is 333 rpm, well inside the 0-3000 bound.
+        assert server.SENSOR_BOUNDS["spin"][1] >= 2000 / 6
+
+    def test_impact_in_g_fits_the_bound(self):
+        assert server.SENSOR_BOUNDS["force"][1] >= 16
+
+    def test_speed_index_fits_the_bound(self):
+        assert server.SENSOR_BOUNDS["speed"][1] >= 100
+
+    def test_derived_carry_fits_the_bound(self):
+        # speed index (max 100) * DERIVED_CARRY_FACTOR (1.5). The factor is
+        # chosen to fit this bound, so a hard strike is never silently
+        # clamped and shown as though the clamp were the measurement.
+        assert server.SENSOR_BOUNDS["distance"][1] >= 100 * 1.5

@@ -137,10 +137,10 @@ export default function PlayerDetailModal({ player, onClose, onUpdated }) {
               <div className="space-y-5">
                 <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
                   {[
-                    { label: "Speed", value: bests.speed, unit: "km/h", icon: Gauge, color: "text-primary" },
-                    { label: "Spin", value: bests.spin, unit: "rpm", icon: RotateCw, color: "text-blue-400" },
-                    { label: "Force", value: bests.force, unit: "N", icon: Zap, color: "text-amber-400" },
-                    { label: "Distance", value: bests.distance, unit: "m", icon: Ruler, color: "text-fuchsia-400" },
+                    { label: "Spin", value: bests.spin, unit: "rpm", icon: RotateCw, color: "text-primary" },
+                    { label: "Impact", value: bests.force, unit: "g", icon: Zap, color: "text-primary" },
+                    { label: "Speed index", value: bests.speed, unit: "", icon: Gauge, color: "text-primary" },
+                    { label: "Carry index", value: bests.distance, unit: "", icon: Ruler, color: "text-primary" },
                   ].map(({ label, value, unit, icon: Icon, color }) => (
                     <div key={label} className="rounded-xl border border-border bg-secondary/30 p-3 text-center">
                       <Icon className={`mx-auto h-4 w-4 ${color}`} />

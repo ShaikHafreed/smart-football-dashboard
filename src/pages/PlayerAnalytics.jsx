@@ -148,10 +148,10 @@ export default function PlayerAnalytics() {
           {/* PERSONAL BESTS */}
           <div className="hairline-grid grid-cols-2 lg:grid-cols-4">
             {[
-              { label: "Best speed", value: bests.speed, unit: "km/h", icon: Gauge },
+              { label: "Best speed index", value: bests.speed, unit: "", icon: Gauge },
               { label: "Best spin", value: bests.spin, unit: "rpm", icon: RotateCw },
-              { label: "Best force", value: bests.force, unit: "N", icon: Zap },
-              { label: "Best distance", value: bests.distance, unit: "m", icon: Ruler },
+              { label: "Best impact", value: bests.force, unit: "g", icon: Zap },
+              { label: "Best carry index", value: bests.distance, unit: "", icon: Ruler },
             ].map(({ label, value, unit, icon: Icon }) => (
               <div key={label} className="p-5">
                 <Icon aria-hidden="true" className="h-4 w-4 text-muted-foreground" />
@@ -163,6 +163,11 @@ export default function PlayerAnalytics() {
               </div>
             ))}
           </div>
+
+          <p className="text-xs leading-relaxed text-muted-foreground">
+            Spin is measured in rpm and impact in g. Speed and carry are full-scale indices, not km/h
+            and metres — the ball's sensor cannot establish those without a calibration run.
+          </p>
 
           {/* TREND */}
           <PerformanceChart history={history} />

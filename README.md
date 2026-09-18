@@ -1,6 +1,6 @@
 # ⚽ Smart Football AI
 
-An IoT-powered football analytics platform. An ESP32 + MPU6050 sensor on the ball captures kick speed, spin, and force in real time; a web dashboard turns that into live telemetry, session history, and performance analytics for both players and coaches.
+An IoT-powered football analytics platform. An ESP32 + MPU6050 sensor inside the ball captures each strike as it happens - spin in rpm, peak impact in g, and a strike index - and a web dashboard turns that into live telemetry, session history, and performance analytics for players and coaches.
 
 **Live app:** https://football.hafreedshaik.online (also reachable at https://smart-football-dashboard.vercel.app)
 
@@ -12,7 +12,7 @@ An IoT-powered football analytics platform. An ESP32 + MPU6050 sensor on the bal
 - Profile with avatar, editable details, and role switching at any time
 
 **Player**
-- Live dashboard — speed, spin, force, and distance streamed from the ESP32 in real time
+- Live dashboard — spin (rpm), impact (g) and a strike index streamed from the ESP32 in real time (see [Measurements](#measurements-and-calibration))
 - **My Performance** — personal bests, a live trend chart, and practice drills generated from your own data
 - **Performance by Session** — every session broken down with a composite Best-Kick score, Max-Speed-Kick, and spin at each of those moments
 
@@ -68,7 +68,7 @@ Earlier versions pointed the ESP32 at the Flask relay's local IP address, which 
 
 ### Hardware / Firmware
 - **ESP32** — Wi-Fi microcontroller running the onboard logic (`firmware/smart_football/smart_football.ino`)
-- **MPU6050** — 3-axis accelerometer + 3-axis gyroscope, read over I²C, used to compute speed/spin/force per kick
+- **MPU6050** — 3-axis accelerometer + 3-axis gyroscope, read over I²C at ±16 g and ±2000 °/s, sampled across a short window around each impact
 - **Vibration sensor** — digital trigger that detects the instant of ball impact (kicks are only measured and sent on a real hit, not continuously)
 - Arduino libraries: `WiFi.h`, `WiFiClientSecure.h` (HTTPS), `HTTPClient.h`, `Wire.h` (I²C), `MPU6050.h`
 
@@ -182,7 +182,56 @@ Four tables in Supabase Postgres, each with Row Level Security scoping every row
 - `football_profiles` — one row per user (name, DOB, avatar, role)
 - `football_players` — a coach's roster (or a player's own self-record)
 - `football_sessions` — start/end time per training session
-- `football_shots` — one row per detected kick (speed, spin, force, distance, shot type)
+- `football_shots` — one row per detected kick (`speed`, `spin`, `force`, `distance`, shot type — see [Measurements](#measurements-and-calibration) for what each field actually carries)
+
+## Measurements and calibration
+
+What the ball reports, and what that is worth. The rule this follows: a raw
+sensor count multiplied by a made-up number is not a physical measurement,
+and the app does not label it as one.
+
+| Shown as | API field | Status |
+|---|---|---|
+| **Spin** (rpm) | `spin` | **Measured.** The gyroscope reads angular rate directly. Counts → °/s is the datasheet sensitivity, °/s → rpm is ÷6. No calibration needed. Ceiling: ±2000 °/s ≈ **333 rpm** — a faster strike reads as that ceiling, and the firmware logs the saturation. |
+| **Impact** (g) | `force` | **Measured.** Peak acceleration magnitude over the impact window, scaled by the datasheet sensitivity. *Not newtons*: that needs the ball's mass and proof the sensor tracks its centre of mass rather than shell flex. |
+| **Speed index** (0–100) | `speed` | **Index, not a speed.** An accelerometer does not measure velocity. This is the peak acceleration as a fraction of full scale — monotonic in how hard the ball was struck, and nothing more. It becomes km/h only after the reference experiment below. |
+| **Carry index** | `distance` | **Derived, not measured.** It is the speed index times a fixed factor, so it contains no information the speed index does not. Nothing on this board observes where the ball lands. |
+
+All four API field names are unchanged, so the relay, database and stored
+history stay compatible. What each field carries is defined in one place:
+[`firmware/smart_football/calibration.h`](firmware/smart_football/calibration.h).
+
+### What was wrong before
+
+The firmware left the MPU6050 at its power-on defaults of ±2 g and ±250 °/s.
+A struck football produces accelerations in the hundreds of g and rotation in
+the thousands of °/s, so **both sensors saturated on every real kick** — the
+raw axis pinned to 32767 and the reported "measurement" was the same number
+for a tap and for a full strike. On top of that, a single sample was taken
+whenever the main loop happened to reach the sensor, once per ~300 ms pass
+and after network work that can block for seconds, so the peak of a
+few-millisecond contact was almost never in the sample that got sent. Speed
+was `|ax|/500` (an acceleration relabelled as a speed), force was `|ay|/500`
+on a different axis, and distance was speed × 2.5.
+
+### To calibrate speed (not yet done)
+
+Requires a trusted reference: a radar gun, two-gate timing, or high-speed
+video at a known frame rate over a measured distance. Take 30+ strikes from
+gentle to maximum, record this firmware's peak g alongside the reference
+speed, fit `v = gain × peak_g + offset`, and record the residual spread. Put
+the fitted values in `SPEED_MODEL_GAIN` / `SPEED_MODEL_OFFSET` and set
+`SPEED_CALIBRATED` to 1 — the app then shows km/h. If residuals are large,
+peak g alone is not a sufficient predictor and the model needs more features
+(contact duration, impulse) rather than a nudged coefficient.
+
+Force in newtons needs the ball's mass and mount verification
+(`BALL_MASS_KG`, `FORCE_NEWTONS_CALIBRATED`). Carry distance needs a
+different instrument entirely.
+
+**No calibration has been performed and no coefficients have been measured.**
+The placeholders are zero on purpose: a wrong coefficient is worse than an
+absent one, because it produces a number that looks like a result.
 
 ## Team
 

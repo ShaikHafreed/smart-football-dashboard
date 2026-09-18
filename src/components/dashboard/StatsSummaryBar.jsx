@@ -28,8 +28,8 @@ function StatItem({ label, value, unit, prev }) {
 export default function StatsSummaryBar({ current, previous }) {
   return (
     <div className="hairline-grid grid-cols-1 sm:grid-cols-3" aria-label="Change since the previous kick">
-      <StatItem label="Force" value={current.kickForce} unit="N" prev={previous?.kickForce} />
-      <StatItem label="Speed" value={current.ballSpeed} unit="km/h" prev={previous?.ballSpeed} />
+      <StatItem label="Impact" value={current.kickForce} unit="g" prev={previous?.kickForce} />
+      <StatItem label="Speed index" value={current.ballSpeed} unit="" prev={previous?.ballSpeed} />
       <StatItem label="Spin" value={current.spinRate} unit="rpm" prev={previous?.spinRate} />
     </div>
   );

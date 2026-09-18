@@ -67,7 +67,7 @@ export default function FootballAnimation({ kickForce = 0 }) {
       <p className="font-data text-sm tabular-nums text-muted-foreground">
         {kickForce > 0 ? (
           <>
-            <span className="text-foreground">{kickForce}</span> N
+            <span className="text-foreground">{kickForce}</span> g peak
           </>
         ) : (
           "No reading yet"
