@@ -235,13 +235,19 @@ export async function fetchShotHistoryPage({
   pageSize = HISTORY_PAGE_SIZE,
   playerId = "",
   search = "",
+  withCount = true,
 } = {}) {
   const term = search.trim();
   const playerJoin = term ? "football_players!inner(id, name)" : "football_players(id, name)";
 
+  // The exact count is a full count of every row the viewer can see, and it
+  // cannot change while the filters stay the same. Benchmarked at 300k shots
+  // it cost ~1.6s on its own, so paying it once per filter rather than once
+  // per page turn is most of the cost of paging.
   let query = supabase
     .from("football_shots")
-    .select(`id, speed, spin, force, distance, shot_type, created_at, ${playerJoin}`, { count: "exact" })
+    .select(`id, speed, spin, force, distance, shot_type, created_at, ${playerJoin}`,
+            withCount ? { count: "exact" } : undefined)
     .order("created_at", { ascending: false })
     .range(page * pageSize, page * pageSize + pageSize - 1);
 
@@ -249,5 +255,7 @@ export async function fetchShotHistoryPage({
   if (term) query = query.ilike("football_players.name", `%${term}%`);
 
   const { data, error, count } = await query;
-  return result(data, error, { count: count || 0 });
+  // null when the count was not requested, so the caller can tell "no rows"
+  // from "not counted this time" and keep the total it already has.
+  return result(data, error, { count: withCount ? (count || 0) : null });
 }

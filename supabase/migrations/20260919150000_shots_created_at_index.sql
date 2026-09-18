@@ -1,0 +1,51 @@
+-- Index football_shots(created_at desc) for the globally ordered history page.
+--
+-- ============================================================
+-- NOT YET APPLIED TO PRODUCTION.
+--
+-- This came out of a scratch-database benchmark, not from production
+-- traffic, and the phase that produced it does not authorise applying a
+-- migration to production automatically. Production currently holds zero
+-- shots, so there is nothing to speed up there yet and no urgency; apply it
+-- deliberately before real data arrives.
+-- ============================================================
+--
+-- EVIDENCE (Postgres 17.11 in a container, 300,647 synthetic shots across 40
+-- players, 600 sessions and 3 organizations; read as an authenticated user
+-- who can see 135,181 of those shots):
+--
+--   Shot history, first page (order by created_at desc, limit 25)
+--     without this index   2413 ms
+--     with this index         2.6 ms
+--
+--   Shot history, deep page (offset 5000)
+--     without this index   2159 ms
+--     with this index       194 ms
+--
+-- WHY the existing index did not cover this. The history page orders every
+-- visible shot by time, across all players the viewer can see. The Phase 5
+-- index is football_shots(player_id, created_at desc), which serves "one
+-- player's shots, newest first" perfectly - the trend chart reads 15 rows in
+-- 1.3 ms through it. But it cannot order across players, so the planner
+-- gathered all 135,181 visible rows and top-N sorted them to return 25:
+--
+--     Limit
+--       ->  Sort (Sort Method: top-N heapsort)
+--             ->  Nested Loop (rows=135181)
+--
+-- With an index on created_at alone the scan walks in time order and stops
+-- as soon as 25 rows survive the RLS filter:
+--
+--     Limit
+--       ->  Index Scan using football_shots_created_at_idx (rows=25)
+--
+-- The deep page still pays for the rows it skips, which is inherent to
+-- OFFSET rather than to the index.
+--
+-- Timings are from a laptop container and are relative evidence about plan
+-- shape, not a prediction of production latency. The row counts are not:
+-- 135,181 rows examined to render 25 is a property of the query, not the
+-- hardware.
+
+create index if not exists football_shots_created_at_idx
+  on public.football_shots (created_at desc);

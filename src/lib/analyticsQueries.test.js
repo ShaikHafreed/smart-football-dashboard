@@ -306,6 +306,25 @@ describe("fetchShotHistoryPage", () => {
     expect(callsOfType("select")[0].cols).not.toContain("!inner");
   });
 
+  it("counts on the first page, because the pager needs a total", async () => {
+    await fetchShotHistoryPage({ page: 0 });
+    expect(callsOfType("select")[0].opts).toMatchObject({ count: "exact" });
+  });
+
+  it("skips the count on later pages, which cannot change it", async () => {
+    // Measured at ~1.6s on its own over 300k rows: the exact count is a full
+    // count of every visible row, and turning a page does not alter it.
+    await fetchShotHistoryPage({ page: 3, withCount: false });
+    expect(callsOfType("select")[0].opts).toBeUndefined();
+  });
+
+  it("reports a skipped count as null, not as zero", async () => {
+    queue({ data: [{ id: 1 }], error: null, count: null });
+    const { count } = await fetchShotHistoryPage({ page: 3, withCount: false });
+    // Zero would make the caller wipe a total it should be keeping.
+    expect(count).toBeNull();
+  });
+
   it("returns the count the pager is built from", async () => {
     queue({ data: [{ id: 1 }], error: null, count: 137 });
     const { count } = await fetchShotHistoryPage({});

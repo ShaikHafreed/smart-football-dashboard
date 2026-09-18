@@ -33,6 +33,9 @@ export default function History() {
       pageSize: PAGE_SIZE,
       playerId: playerFilter,
       search: appliedSearch,
+      // Changing a filter always resets to page 0, so counting there keeps
+      // the total correct without re-counting on every page turn.
+      withCount: pageIndex === 0,
     });
 
     if (loadError) {
@@ -42,7 +45,7 @@ export default function History() {
     } else {
       setError("");
       setData(rows);
-      setTotalCount(count);
+      if (count !== null) setTotalCount(count);
     }
 
     setLoading(false);
