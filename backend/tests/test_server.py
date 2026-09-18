@@ -1713,6 +1713,32 @@ class TestFirmwareMeasurement:
         assert "CALIBRATION PROCEDURE" in self.calibration
         assert "radar gun" in self.calibration
 
+    def test_serial_diagnostics_emit_parseable_records(self):
+        """The calibration experiments read these off a serial log, so the
+        record names are part of the tooling contract."""
+        for record in ("CAL_INFO", "CAL_REST", "CAL_SPIN", "CAL_IMPACT"):
+            assert record in self.sketch, record
+
+    def test_the_rest_check_runs_at_boot(self):
+        """A stationary ball must read 1 g; if it does not, nothing measured
+        later is worth anything."""
+        assert "printRestCheck" in self.sketch
+        assert "REST_CHECK_MS" in self.calibration
+
+    def test_diagnostics_report_the_configuration_they_came_from(self):
+        """So a dataset can never be analysed against the wrong ranges."""
+        assert "printCalibrationInfo" in self.sketch
+        assert "accel_lsb_per_g=" in self.sketch
+        assert "speed_calibrated=" in self.sketch
+
+    def test_impact_records_carry_the_saturation_flags(self):
+        assert "accel_saturated=" in self.sketch
+        assert "gyro_saturated=" in self.sketch
+
+    def test_logging_can_be_switched_off_without_touching_measurement(self):
+        assert "#define CALIBRATION_LOGGING      1" in self.calibration
+        assert "#if CALIBRATION_LOGGING" in self.sketch
+
     def test_api_field_order_is_unchanged(self):
         """speed, spin, force, distance - the backend, database and stored
         history stay compatible; only what each field carries changed."""

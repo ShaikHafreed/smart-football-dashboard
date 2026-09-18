@@ -10,6 +10,7 @@ import { fetchPlayerShotStats, fetchRecentShots, mergeShotStats } from "../lib/a
 import PageHeader from "../components/common/PageHeader";
 import Panel from "../components/common/Panel";
 import StateBlock from "../components/common/StateBlock";
+import MeasurementLegend from "../components/common/MeasurementLegend";
 
 const DRILL_LIBRARY = {
   low: [
@@ -164,10 +165,7 @@ export default function PlayerAnalytics() {
             ))}
           </div>
 
-          <p className="text-xs leading-relaxed text-muted-foreground">
-            Spin is measured in rpm and impact in g. Speed and carry are full-scale indices, not km/h
-            and metres — the ball's sensor cannot establish those without a calibration run.
-          </p>
+          <MeasurementLegend />
 
           {/* TREND */}
           <PerformanceChart history={history} />

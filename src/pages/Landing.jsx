@@ -42,10 +42,10 @@ const SECTIONS = [
 // until the calibration experiment in firmware/smart_football/calibration.h
 // has actually been run.
 const MEASUREMENTS = [
-  { icon: RotateCw, label: "Spin", hint: "rotation rate at contact, in rpm" },
-  { icon: Zap, label: "Impact", hint: "peak acceleration through the strike, in g" },
-  { icon: Gauge, label: "Speed index", hint: "how hard the ball was struck, on a full-scale index" },
-  { icon: Ruler, label: "Carry index", hint: "derived from the speed index, not measured separately" },
+  { icon: RotateCw, label: "Spin", tag: "Measured", measured: true, hint: "rotation rate at contact, in rpm" },
+  { icon: Zap, label: "Impact", tag: "Measured", measured: true, hint: "peak acceleration through the strike, in g" },
+  { icon: Gauge, label: "Speed index", tag: "Index", measured: false, hint: "how hard the ball was struck, on a full-scale index" },
+  { icon: Ruler, label: "Carry index", tag: "Derived", measured: false, hint: "calculated from the speed index, not measured separately" },
 ];
 
 const STEPS = [
@@ -337,9 +337,18 @@ export default function Landing() {
           {/* what the ball measures */}
           <div className="mx-auto max-w-6xl px-5 pb-16 sm:px-8 lg:pb-24">
             <div className="grid grid-cols-2 gap-px overflow-hidden rounded-2xl border border-border bg-border lg:grid-cols-4">
-              {MEASUREMENTS.map(({ icon: Icon, label, hint }) => (
+              {MEASUREMENTS.map(({ icon: Icon, label, hint, tag, measured }) => (
                 <div key={label} className="bg-card p-5">
-                  <Icon aria-hidden="true" className="h-4 w-4 text-[hsl(var(--lime))]" />
+                  <div className="flex items-center justify-between gap-2">
+                    <Icon aria-hidden="true" className="h-4 w-4 text-[hsl(var(--lime))]" />
+                    {/* Says plainly which of these the ball measures and
+                        which stand in for something not yet calibrated. */}
+                    <span
+                      className={`chip ${measured ? "border-[hsl(var(--lime))]/50 text-foreground" : "text-muted-foreground"}`}
+                    >
+                      {tag}
+                    </span>
+                  </div>
                   <p className="font-display mt-3 text-base font-semibold">{label}</p>
                   <p className="mt-1 text-[13px] leading-snug text-muted-foreground">{hint}</p>
                 </div>

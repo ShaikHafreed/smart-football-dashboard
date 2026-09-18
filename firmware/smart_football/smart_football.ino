@@ -98,6 +98,115 @@ bool axisSaturated(int16_t v) {
   return v > AXIS_SATURATION_COUNTS || v < -AXIS_SATURATION_COUNTS;
 }
 
+// ==========================================
+// CALIBRATION DIAGNOSTICS
+//
+// One CSV record per line, prefixed CAL_, so a plain serial log can be fed
+// straight to tools/calibration/capture.py. Printing costs nothing when
+// nothing is happening: the rest check runs once at boot, the spin line
+// only while the ball is actually turning, and the impact line only on a
+// real strike.
+// ==========================================
+
+#if CALIBRATION_LOGGING
+
+// Records what the numbers in this log were produced BY, so a dataset can
+// never be analysed against the wrong sensor configuration.
+void printCalibrationInfo() {
+  Serial.print("CAL_INFO,fw=");
+  Serial.print(FW_VERSION);
+  Serial.print(",accel_range_g=");
+  Serial.print(ACCEL_RANGE_G, 1);
+  Serial.print(",gyro_range_dps=");
+  Serial.print(GYRO_RANGE_DPS, 1);
+  Serial.print(",accel_lsb_per_g=");
+  Serial.print(ACCEL_LSB_PER_G, 1);
+  Serial.print(",gyro_lsb_per_dps=");
+  Serial.print(GYRO_LSB_PER_DPS, 1);
+  Serial.print(",window_ms=");
+  Serial.print(IMPACT_WINDOW_MS);
+  Serial.print(",speed_calibrated=");
+  Serial.println(SPEED_CALIBRATED);
+}
+
+// Experiment 1: a stationary ball must read 1.000 g total. This is the
+// cheapest possible check that the range setting and the datasheet scaling
+// are both right, and it fails loudly if the sensor is mis-mounted.
+void printRestCheck() {
+  double sum = 0;
+  float minG = 1e9, maxG = -1e9;
+  int n = 0;
+  unsigned long start = millis();
+
+  while (millis() - start < REST_CHECK_MS) {
+    mpu.getMotion6(&ax, &ay, &az, &gx, &gy, &gz);
+    double counts = sqrt((double)ax * ax + (double)ay * ay + (double)az * az);
+    float g = counts / ACCEL_LSB_PER_G;
+    sum += g;
+    if (g < minG) minG = g;
+    if (g > maxG) maxG = g;
+    n++;
+    delay(5);
+  }
+
+  if (n == 0) return;
+
+  Serial.print("CAL_REST,mean_g=");
+  Serial.print(sum / n, 4);
+  Serial.print(",min_g=");
+  Serial.print(minG, 4);
+  Serial.print(",max_g=");
+  Serial.print(maxG, 4);
+  Serial.print(",samples=");
+  Serial.println(n);
+  Serial.println("CAL_NOTE,hold the ball still at boot: mean_g should be 1.000");
+}
+
+// Experiment 2: spin the ball at a known rate and compare. Printed while
+// rotating so a turntable run produces a stream to average.
+unsigned long lastSpinLog = 0;
+
+void logSpinIfRotating() {
+  if (millis() - lastSpinLog < SPIN_LOG_INTERVAL_MS) return;
+
+  mpu.getMotion6(&ax, &ay, &az, &gx, &gy, &gz);
+  double counts = sqrt((double)gx * gx + (double)gy * gy + (double)gz * gz);
+  float rpm = (counts / GYRO_LSB_PER_DPS) / 6.0f;
+
+  if (rpm < SPIN_LOG_MIN_RPM) return;
+
+  lastSpinLog = millis();
+  Serial.print("CAL_SPIN,ms=");
+  Serial.print(millis());
+  Serial.print(",rpm=");
+  Serial.print(rpm, 2);
+  Serial.print(",saturated=");
+  Serial.println((axisSaturated(gx) || axisSaturated(gy) || axisSaturated(gz)) ? 1 : 0);
+}
+
+// Experiment 3: one record per real strike. Pair each with a reference
+// speed to build the speed calibration dataset.
+void logImpact(const ImpactMeasurement& m) {
+  Serial.print("CAL_IMPACT,ms=");
+  Serial.print(millis());
+  Serial.print(",peak_g=");
+  Serial.print(m.peakG, 3);
+  Serial.print(",peak_rpm=");
+  Serial.print(m.peakRpm, 2);
+  Serial.print(",speed_index=");
+  Serial.print(m.speedIndex, 2);
+  Serial.print(",carry_index=");
+  Serial.print(m.derivedCarry, 2);
+  Serial.print(",samples=");
+  Serial.print(m.samples);
+  Serial.print(",accel_saturated=");
+  Serial.print(m.accelSaturated ? 1 : 0);
+  Serial.print(",gyro_saturated=");
+  Serial.println(m.gyroSaturated ? 1 : 0);
+}
+
+#endif
+
 // Samples as fast as the I2C bus allows for IMPACT_WINDOW_MS and keeps the
 // peaks. Contact lasts a few milliseconds; a single reading taken whenever
 // the main loop happened to arrive almost never contained it.
@@ -527,6 +636,11 @@ void setup() {
     Serial.println("MPU6050 init FAILED.");
   }
 
+#if CALIBRATION_LOGGING
+  printCalibrationInfo();
+  printRestCheck();
+#endif
+
   prefs.begin("football", false);
   deviceId = prefs.getString("device_id", "");
   deviceToken = prefs.getString("device_token", "");
@@ -574,6 +688,10 @@ void loop() {
     checkForFirmwareUpdate();
   }
 
+#if CALIBRATION_LOGGING
+  logSpinIfRotating();
+#endif
+
   if (digitalRead(VIB_PIN) == HIGH) {
     ImpactMeasurement impact = captureImpact();
 
@@ -584,6 +702,10 @@ void loop() {
       if (impact.gyroSaturated) {
         Serial.println("Spin exceeded +/-2000 deg/s - rate is a lower bound.");
       }
+
+#if CALIBRATION_LOGGING
+      logImpact(impact);
+#endif
 
       // Field order is unchanged (speed, spin, force, distance) so the
       // backend, database and history stay compatible. What each field
