@@ -92,7 +92,7 @@ export default function Leaderboard() {
       <PageHeader
         eyebrow="Overview"
         title="Leaderboard"
-        description="Ranked by each player's best combined speed and force from a single strike."
+        description="Ranked by each player's best strike score — the speed index and impact of one kick, combined for ranking."
       />
 
       {rows.length > 0 && (
@@ -118,6 +118,14 @@ export default function Leaderboard() {
           Showing the top {LEADERBOARD_LIMIT} players by best score.
         </p>
       )}
+
+      {/* The score mixes a full-scale index with a value in g, so it orders
+          players without being a quantity in its own right. Saying so is
+          cheaper than letting someone read it as a speed. */}
+      <p className="text-xs leading-relaxed text-muted-foreground">
+        The strike score is a ranking figure, not a measurement — it combines the speed index and
+        impact of a single kick.
+      </p>
 
       {loading && <StateBlock variant="loading" />}
 

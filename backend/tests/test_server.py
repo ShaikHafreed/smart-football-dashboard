@@ -1541,11 +1541,67 @@ class TestMigrationSafety:
                 if "drop policy" in line:
                     dropped.append(line.strip())
 
+        # Each entry is a policy that was deliberately removed, with the
+        # reason. Anything dropped that is not on this list fails the test,
+        # which is the point: a policy must never disappear quietly.
+        DOCUMENTED_DROPS = (
+            "anyone signed in can claim an unclaimed device",   # client-side claim, replaced by proof of possession
+            "members can view org roster",                      # replaced in the same migration (recursion fix)
+            # Consolidated into one OR'd policy per table+command. Permissive
+            # policies already OR together, so the access set is unchanged.
+            "own players select", "org members can view org players",
+            "own players insert", "org members can add org players",
+            "own players update", "org members can update org players",
+            "own profile select", "org members can view each others profile",
+            "own sessions select", "org members can view org player sessions",
+            "own shots select", "org members can view org player shots",
+        )
+
         for line in dropped:
-            assert (
-                "anyone signed in can claim an unclaimed device" in line
-                or "members can view org roster" in line  # replaced in the same migration
-            ), line
+            assert any(name in line for name in DOCUMENTED_DROPS), line
+
+    def test_consolidated_policies_replace_what_they_dropped(self):
+        """A merge must leave a policy behind, not a hole."""
+        sql = _sql(os.path.join(MIGRATIONS_DIR, "20260919130000_rls_policy_consolidation.sql"))
+
+        for created in ("players readable by owner or org",
+                        "players insertable by owner or org",
+                        "players updatable by owner or org",
+                        "profiles readable by self or org",
+                        "sessions readable by owner or org",
+                        "shots readable by player owner or org"):
+            assert f'create policy "{created}"' in sql, created
+
+        # Six pairs merged: twelve drops, six creates.
+        assert sql.count("drop policy") == 12
+        assert sql.count("create policy") == 6
+
+    def test_consolidation_preserves_both_sides_of_every_pair(self):
+        """The merged predicate must contain the own-row test AND the org
+        test - a merge that silently loses one side would still pass a
+        smoke test on a database with no organizations in it."""
+        sql = _sql(os.path.join(MIGRATIONS_DIR, "20260919130000_rls_policy_consolidation.sql"))
+
+        # own-row side
+        assert sql.count("(select auth.uid()) = user_id") >= 3   # players select/insert/update
+        assert "(select auth.uid()) = id" in sql                  # profiles
+        assert "p.user_id = (select auth.uid())" in sql           # shots, via the player
+        # org side: players x3, sessions, shots use the plain reference...
+        assert sql.count("football_org_members.user_id = (select auth.uid())") >= 5
+        # ...and profiles nests it under an alias, which is still the org test.
+        assert "football_org_members_1.user_id = (select auth.uid())" in sql
+        # and every merged predicate is an OR, never a replacement
+        assert sql.count("\n    or ") + sql.count(" or ") >= 6
+
+    def test_consolidation_does_not_grant_writes_on_shots(self):
+        """football_shots stays read-only to clients; the relay writes it
+        with the service role."""
+        sql = _sql(os.path.join(MIGRATIONS_DIR, "20260919130000_rls_policy_consolidation.sql"))
+        shots_section = sql[sql.index('create policy "shots readable by player owner or org"'):]
+        assert "for select" in shots_section
+        assert "for insert" not in shots_section
+        assert "for update" not in shots_section
+        assert "for delete" not in shots_section
 
     def test_phase_5_indexes_are_rerunnable(self):
         sql = _sql(os.path.join(MIGRATIONS_DIR, "20260918180000_hot_indexes_and_integrity.sql"))
