@@ -71,6 +71,16 @@ export default function Session() {
 
     setError("");
 
+    // Close anything still open on this ball first. The database now allows
+    // only one open session per device (the invariant Phase 2's attribution
+    // already assumed), and a tab closed without pressing Stop leaves one
+    // behind -- so without this, the next Start would be rejected.
+    await supabase
+      .from("football_sessions")
+      .update({ ended_at: new Date().toISOString() })
+      .eq("device_id", activeDeviceId)
+      .is("ended_at", null);
+
     const { data, error: insertError } = await supabase
       .from("football_sessions")
       .insert({ user_id: user.id, player_id: activePlayer.id, device_id: activeDeviceId })

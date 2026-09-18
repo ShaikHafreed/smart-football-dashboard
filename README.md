@@ -143,12 +143,34 @@ The Flask server listens on `http://127.0.0.1:5000` locally and expects the ESP3
 
 Render's free tier sleeps after 15 minutes idle and takes 30–50s to wake on the first request after that — the firmware's request timeout is set generously to accommodate this.
 
+**Environment variables the backend expects:**
+
+| Variable | Where | Purpose |
+|---|---|---|
+| `SUPABASE_URL` | Render (secret) | Supabase project the relay writes to |
+| `SUPABASE_SERVICE_ROLE_KEY` | Render (secret) | Service-role key — bypasses RLS, never commit it |
+| `TRUST_PROXY_HEADERS` | Render (`render.yaml`, `"1"`) | Says the app is behind Render's proxy, so rate limits key on the real client IP and requests that reached the edge over plain HTTP are refused. Must stay **unset** anywhere the app is directly exposed, or callers could forge the headers |
+| `ALLOWED_ORIGINS` | Render (optional) | Comma-separated CORS origins; defaults to the two production frontend URLs plus localhost |
+| `VITE_FLASK_URL` | Vercel (Production) | The deployed backend URL. **Required** — without it the frontend falls back to `http://127.0.0.1:5000`, and device pairing, release, session start/stop and account deletion all fail. It must be `https://`; the app refuses to send an access token over plain HTTP |
+
+**Deployment order matters:** apply database migrations → deploy the backend and set its variables → verify `/healthz` → set `VITE_FLASK_URL` and redeploy the frontend → only then reflash firmware.
+
 ### Hardware (ESP32)
 Flash `firmware/smart_football/smart_football.ino` from the Arduino IDE. First copy `firmware/smart_football/secrets.example.h` to `secrets.h` in the same folder and fill in your Wi-Fi networks — `secrets.h` is gitignored, so credentials never reach the repository (the sketch won't compile without it). Update `serverHost` (the deployed Render hostname — see above) at the top of the sketch, and confirm these pins match your actual wiring:
 
 | Pin | Purpose |
 |---|---|
 | `VIB_PIN` (27) | Vibration sensor — signals a kick was detected |
+
+The sketch validates the backend's TLS certificate against the root CAs in `firmware/smart_football/certs.h` (GTS Root R4, which `*.onrender.com` chains to today, plus ISRG Root X1 for a future custom domain). It also syncs its clock over NTP first, because certificate validity dates cannot be checked by a board that thinks it is 1970. If validation or time sync fails, kicks are buffered — there is deliberately no insecure fallback. `certs.h` explains how to regenerate the bundle if the backend's CA ever changes.
+
+### OTA authenticity — read before publishing firmware
+Update images are fetched over validated TLS and verified against an `x-MD5` header, so a tampered-in-transit or truncated download is rejected. **That is integrity, not authenticity** — the image is not cryptographically signed, so anyone who can write to `backend/firmware_releases/` can publish firmware to every ball. Treat write access to that directory as equivalent to code execution on the hardware. Closing this properly requires a release signing key plus ESP32 secure boot, which fuses the key into the chip and is irreversible — an operational decision, not a code change, and deliberately not done here.
+
+### Pairing a ball to an account
+On first boot the board registers itself and generates a **pairing code**, which it prints to the Serial monitor alongside its **Device ID** on every boot. Enter both on the app's Devices page to claim the ball. The backend stores only a salted hash of the code, so knowing a Device ID is not enough to pair someone else's football — you have to be holding it.
+
+**Release** on the Devices page gives a ball up: it revokes the device's credentials as well as its ownership, ends any session it was recording, and makes it register again on its next boot (printing a fresh pairing code) so it can be claimed by its next owner. That is also how to recover a ball whose stored credentials were lost — the backend will not re-issue credentials for a device that is still claimed.
 
 ### Google sign-in
 Requires a Google OAuth Client ID/Secret enabled under **Authentication → Providers → Google** in your Supabase project, with the redirect URI `<your-supabase-url>/auth/v1/callback`.

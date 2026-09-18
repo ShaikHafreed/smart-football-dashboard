@@ -5,6 +5,12 @@
 #include <Wire.h>
 #include <MPU6050.h>
 #include <Preferences.h>
+#include <esp_system.h>   // esp_random() — hardware RNG for the pairing code
+#include <time.h>         // NTP-backed clock, required for TLS certificate validation
+
+// Root CAs the backend must chain to. Generated, public, and verified
+// against the live host -- see the file header.
+#include "certs.h"
 
 MPU6050 mpu;
 Preferences prefs;
@@ -27,11 +33,22 @@ const int knownNetworkCount = sizeof(knownNetworks) / sizeof(knownNetworks[0]);
 // hotspot), not just the one network its old local-IP address lived on.
 const char* serverHost = "smart-football-backend.onrender.com";
 
-// Render's free tier serves HTTPS only, so we go over TLS. setInsecure()
-// skips certificate validation — acceptable for a prototype/demo talking to
-// a known host, but note this is not certificate-pinned; a proper
-// production device would validate against Render's CA instead.
+// All backend traffic goes over TLS, and the certificate is now actually
+// verified against the roots in certs.h. Previously this client ran with
+// setInsecure(), which accepted ANY certificate -- so anyone able to answer
+// for the backend on a hostile network (a café, a campus, a phone hotspot)
+// could read this ball's device token straight out of its first request and
+// then write telemetry as it, or serve it their own firmware over OTA.
+//
+// There is deliberately no insecure fallback: if validation fails the kick
+// is buffered, not sent in the clear.
 WiFiClientSecure secureClient;
+
+// TLS validation checks the certificate's validity window, and an ESP32
+// boots believing it is 1970 -- so without a real clock every request would
+// fail as "certificate not yet valid". NTP is a prerequisite here, not a
+// nicety, which is why nothing is sent until this is true.
+bool timeSynced = false;
 
 #define VIB_PIN 27
 
@@ -49,11 +66,58 @@ int16_t ax, ay, az, gx, gy, gz;
 String deviceId = "";
 String deviceToken = "";
 
+// The pairing code is this board's proof of physical possession. It is
+// generated here (never by the server, never shipped in this source), sent
+// once at registration — where the backend keeps only a salted hash of it —
+// and printed to Serial on every boot. Claiming the ball in the app requires
+// typing it, so knowing a device id is no longer enough to take someone's
+// football.
+String pairingCode = "";
+
+// No 0/O/1/I/5/S: this gets read off a serial monitor and typed by a person.
+const char PAIRING_ALPHABET[] = "ABCDEFGHJKLMNPQRTUVWXYZ2346789";
+const int PAIRING_CODE_LENGTH = 8;
+
 String getDeviceUid() {
   uint64_t chipid = ESP.getEfuseMac();
   char buf[17];
   snprintf(buf, sizeof(buf), "%016llX", (unsigned long long)chipid);
   return String(buf);
+}
+
+String generatePairingCode() {
+  const int alphabetSize = sizeof(PAIRING_ALPHABET) - 1;
+  String code = "";
+  for (int i = 0; i < PAIRING_CODE_LENGTH; i++) {
+    // esp_random() is the hardware RNG, not the seeded pseudo-random the
+    // Arduino random() uses — which would produce the same "secret" on
+    // every board that boots the same way.
+    code += PAIRING_ALPHABET[esp_random() % alphabetSize];
+  }
+  return code;
+}
+
+void printPairingInstructions() {
+  if (deviceId == "" || pairingCode == "") return;
+  Serial.println("---------------------------------------------");
+  Serial.println("Pair this ball in the app with:");
+  Serial.println("  Device ID:    " + deviceId);
+  Serial.println("  Pairing code: " + pairingCode);
+  Serial.println("---------------------------------------------");
+}
+
+// Called when the backend says these credentials are no longer valid (the
+// owner released the ball, or it was revoked). Wiping them is what makes the
+// board re-register on its next loop and become claimable again by whoever
+// is physically holding it.
+void clearDeviceCredentials() {
+  prefs.remove("device_id");
+  prefs.remove("device_token");
+  prefs.remove("pairing_code");
+  deviceId = "";
+  deviceToken = "";
+  pairingCode = "";
+  Serial.println("Device credentials revoked — will re-register.");
 }
 
 // Registers this board with the backend on its very first boot and saves
@@ -63,16 +127,24 @@ bool registerDevice() {
   String deviceUid = getDeviceUid();
   Serial.println("Registering device, uid=" + deviceUid);
 
+  // A fresh code every registration, so a re-provisioned ball can never be
+  // claimed with a code someone noted down before.
+  String newPairingCode = generatePairingCode();
+
   HTTPClient http;
   String url = String("https://") + serverHost + "/api/device/register";
   http.begin(secureClient, url);
   http.addHeader("Content-Type", "application/json");
   http.setTimeout(60000);
 
-  String payload = String("{\"device_uid\":\"") + deviceUid + "\"}";
+  String payload = String("{\"device_uid\":\"") + deviceUid +
+                   "\",\"pairing_code\":\"" + newPairingCode + "\"}";
   int code = http.POST(payload);
 
-  if (code == 201) {
+  // 200 = this unclaimed identity was re-provisioned (an NVS erase, or a
+  // ball that was released by its previous owner); 201 = brand new. Both
+  // hand back fresh credentials.
+  if (code == 200 || code == 201) {
     String body = http.getString();
     // Minimal hand-rolled parse — the response is a small, fixed-shape
     // object we control on the server side, so a JSON library is overkill.
@@ -83,23 +155,28 @@ bool registerDevice() {
 
     deviceId = body.substring(idStart, idEnd);
     deviceToken = body.substring(tokStart, tokEnd);
+    pairingCode = newPairingCode;
 
     prefs.putString("device_id", deviceId);
     prefs.putString("device_token", deviceToken);
+    // Stored only after the server accepted it — otherwise this board would
+    // print a code that claims nothing.
+    prefs.putString("pairing_code", pairingCode);
 
     Serial.println("Registered. device_id=" + deviceId);
+    printPairingInstructions();
     http.end();
     return true;
   }
 
   if (code == 409) {
-    // A row with this device_uid already exists but we have no local
-    // token — this only happens if NVS was erased after a prior
-    // successful registration. There's no safe way to recover the token
-    // automatically (see backend/server.py's comment on why /register
-    // refuses to hand it out twice); the row needs to be deleted in
-    // Supabase manually before this board can register again.
-    Serial.println("Device already registered server-side but token is missing locally. Delete the football_devices row for this device_uid and reboot.");
+    // The device_uid exists AND is already claimed by an account. The server
+    // will not re-issue credentials for a claimed device (that is what stops
+    // anyone who knows a device id from taking it over), so recovery is
+    // owner-driven: press Release on the Devices page, which revokes the old
+    // credentials and lets this board register itself again.
+    Serial.println("This ball is already claimed by an account and its local credentials are missing.");
+    Serial.println("Open the app -> Devices -> Release on that ball, then reboot to re-pair it.");
   } else {
     Serial.printf("Registration failed, HTTP %d\n", code);
   }
@@ -111,6 +188,31 @@ bool registerDevice() {
 // ==========================================
 // WIFI
 // ==========================================
+
+bool ensureTimeSynced() {
+  if (timeSynced) return true;
+  if (WiFi.status() != WL_CONNECTED) return false;
+
+  configTime(0, 0, "pool.ntp.org", "time.google.com");
+
+  // Any plausible "now" beats the 1970 the chip starts from; this is a
+  // sanity floor (2023-11-14), not a precision requirement.
+  const time_t MIN_VALID_EPOCH = 1700000000;
+  time_t now = time(nullptr);
+  unsigned long start = millis();
+  while (now < MIN_VALID_EPOCH && millis() - start < 10000) {
+    delay(200);
+    now = time(nullptr);
+  }
+
+  timeSynced = now >= MIN_VALID_EPOCH;
+  if (timeSynced) {
+    Serial.println("Time synced — HTTPS certificate validation active.");
+  } else {
+    Serial.println("Time sync failed — retrying; kicks are buffered until certificates can be validated.");
+  }
+  return timeSynced;
+}
 
 void connectWiFi() {
   for (int i = 0; i < knownNetworkCount; i++) {
@@ -200,6 +302,14 @@ bool sendOne(float speed, float spin, float force, float distance) {
   Serial.print("Kick sent -> ");
   Serial.println(responseCode);
 
+  if (responseCode == 401) {
+    // Only ever returned for credentials the server actively rejected. A
+    // Supabase outage or lookup failure returns 503, not 401, precisely so
+    // a transient blip can never wipe a working identity.
+    clearDeviceCredentials();
+    return false;
+  }
+
   return responseCode == 200;
 }
 
@@ -224,7 +334,9 @@ void flushBuffer() {
 }
 
 void sendReading(float speed, float spin, float force, float distance) {
-  if (WiFi.status() != WL_CONNECTED || deviceId == "") {
+  // No clock means no certificate validation, so this buffers exactly as it
+  // does with no Wi-Fi -- the kick is kept, never sent unverified.
+  if (WiFi.status() != WL_CONNECTED || !timeSynced || deviceId == "") {
     bufferReading(speed, spin, force, distance);
     return;
   }
@@ -248,8 +360,14 @@ void sendReading(float speed, float spin, float force, float distance) {
 unsigned long lastFirmwareCheck = 0;
 const unsigned long FIRMWARE_CHECK_INTERVAL_MS = 3600000UL; // 1 hour
 
+// Registration is rate limited server-side, and the loop runs every 300ms,
+// so an un-provisioned board must not hammer it (which would burn its own
+// quota and lock itself out of re-registering).
+unsigned long lastRegisterAttempt = 0;
+const unsigned long REGISTER_RETRY_INTERVAL_MS = 30000UL; // 30 seconds
+
 void checkForFirmwareUpdate() {
-  if (WiFi.status() != WL_CONNECTED) return;
+  if (WiFi.status() != WL_CONNECTED || !timeSynced) return;
 
   HTTPClient http;
   String versionUrl = String("https://") + serverHost + "/api/firmware/version";
@@ -275,6 +393,16 @@ void checkForFirmwareUpdate() {
 
   Serial.println("New firmware available: " + latestVersion + " (running " + FW_VERSION + ") — updating...");
 
+  // Same verified TLS client as every other request, so the image can only
+  // come from a host presenting a certificate for serverHost that chains to
+  // a root in certs.h. The backend also sends an x-MD5 header, which the
+  // HTTPUpdate library hands to the Updater to verify the flashed bytes.
+  //
+  // What this still does NOT prove is AUTHENTICITY: the image is not
+  // cryptographically signed, so anyone who can publish to the backend's
+  // firmware_releases directory can publish firmware to every ball. See
+  // "OTA authenticity" in the README -- that needs signing keys and ESP32
+  // secure boot, which is a hardware-fusing operation, not a code change.
   String binUrl = String("https://") + serverHost + "/api/firmware/latest.bin";
   t_httpUpdate_return result = httpUpdate.update(secureClient, binUrl);
 
@@ -300,7 +428,7 @@ void setup() {
 
   pinMode(VIB_PIN, INPUT);
 
-  secureClient.setInsecure();
+  secureClient.setCACert(BACKEND_ROOT_CA_BUNDLE);
 
   Wire.begin();
   mpu.initialize();
@@ -311,17 +439,25 @@ void setup() {
   prefs.begin("football", false);
   deviceId = prefs.getString("device_id", "");
   deviceToken = prefs.getString("device_token", "");
+  pairingCode = prefs.getString("pairing_code", "");
 
   connectWiFi();
+  ensureTimeSynced();
 
-  if (deviceId == "" || deviceToken == "") {
-    if (WiFi.status() == WL_CONNECTED) {
+  // A board flashed before pairing codes existed has credentials but no
+  // code, so it cannot be claimed. Re-registering fixes that while it is
+  // still unclaimed; if it is already claimed the server answers 409 and it
+  // simply carries on with the credentials it has.
+  if (deviceId == "" || deviceToken == "" || pairingCode == "") {
+    if (WiFi.status() == WL_CONNECTED && timeSynced) {
+      lastRegisterAttempt = millis();
       registerDevice();
     } else {
       Serial.println("No WiFi yet — will attempt device registration once connected.");
     }
   } else {
     Serial.println("Loaded existing device_id from flash: " + deviceId);
+    printPairingInstructions();
   }
 }
 
@@ -331,9 +467,14 @@ void loop() {
     connectWiFi();
   }
 
-  // Finish registration if it didn't happen in setup() because WiFi
-  // wasn't up yet.
-  if ((deviceId == "" || deviceToken == "") && WiFi.status() == WL_CONNECTED) {
+  // Keeps retrying after a failed or missed sync; a no-op once synced.
+  ensureTimeSynced();
+
+  // Finish registration if it didn't happen in setup() because WiFi wasn't
+  // up yet, or re-provision after the backend revoked these credentials.
+  if ((deviceId == "" || deviceToken == "") && WiFi.status() == WL_CONNECTED && timeSynced &&
+      millis() - lastRegisterAttempt > REGISTER_RETRY_INTERVAL_MS) {
+    lastRegisterAttempt = millis();
     registerDevice();
   }
 
