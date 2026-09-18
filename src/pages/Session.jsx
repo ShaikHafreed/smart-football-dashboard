@@ -6,8 +6,12 @@ import { supabase } from "../lib/supabaseClient";
 import { useAuth } from "../lib/AuthContext";
 import { authedFetch } from "../lib/flaskClient";
 import PageHeader from "../components/common/PageHeader";
+import MeasurementLegend from "../components/common/MeasurementLegend";
 
 const EMPTY_READING = { speed: 0, spin: 0, force: 0, distance: 0 };
+
+// Mirrors IMPACT_WINDOW_MS in firmware/smart_football/calibration.h.
+const IMPACT_WINDOW_MS = 120;
 
 export default function Session() {
   const { user, role, ensureSelfPlayer } = useAuth();
@@ -299,6 +303,16 @@ export default function Session() {
             </div>
           ))}
         </div>
+      )}
+
+      {running && (
+        <>
+          <p className="text-xs leading-relaxed text-muted-foreground">
+            Each figure is the peak across the {IMPACT_WINDOW_MS} ms window the ball samples around
+            contact, not a single instant.
+          </p>
+          <MeasurementLegend />
+        </>
       )}
 
       {/* CONTROLS */}
