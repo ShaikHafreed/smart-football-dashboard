@@ -3,6 +3,7 @@ import logging
 import os
 import secrets
 import time
+from datetime import datetime, timezone
 from functools import wraps
 
 import requests
@@ -57,21 +58,44 @@ DISCONNECTED = {
     "connected": False,
 }
 
-# Per-device live state. Keyed by device_id (uuid string).
-# NOTE: this lives in process memory, which only works because this app
-# currently runs as a single Render worker (see server start comment
-# below). Add a second worker and devices would randomly appear/vanish
-# depending which process served a given request -- move this to Redis
-# (or Supabase itself) before scaling past one worker.
-device_state = {}          # device_id -> {"latest": {...}, "last_update": ts}
-device_active_session = {}  # device_id -> {"session_id": ..., "player_id": ...}
+# Per-device LIVE SNAPSHOT. Process memory is fine for this one: it is a
+# derived, disposable view of the last reading, and the authoritative copy
+# of the same values is written to football_devices by touch_device() --
+# which is what the dashboard actually subscribes to over Realtime. A
+# restart just means /data reports "disconnected" until the next kick.
+device_state = {}  # device_id -> {"latest": {...}, "last_update": ts}
 
-# The legacy unauthenticated endpoint (/esp-data) predates device identity
-# entirely and has no way to say which ball it is. It keeps working so an
-# already-flashed board doesn't go dark, but it can only ever represent one
-# anonymous device -- exactly the multi-tenant bug the rest of this file
-# fixes. Retire it once every physical unit is reflashed with device auth.
-LEGACY_DEVICE_ID = "legacy-unauthenticated"
+# Per-device ACTIVE SESSION BINDING -- which player every kick from a given
+# ball is attributed to.
+#
+# This used to be the authoritative store, in process memory. It was not
+# durable: a Render sleep/redeploy/restart (or a second worker) wiped it,
+# after which kicks still arrived and still looked live on the dashboard
+# but were silently never written to football_shots.
+#
+# The authoritative binding now lives in the database: the open
+# football_sessions row for that device (ended_at is null, most recent
+# started_at). This dict is only a short-lived cache over that lookup, so a
+# burst of kicks does not mean a Supabase round-trip each -- any process can
+# rebuild it from the database at any time.
+device_session_cache = {}  # device_id -> {"binding": {...} | None, "cached_at": ts}
+
+# Kept short deliberately: it bounds both how long a stopped session can
+# still attract kicks on another worker, and how long a freshly started one
+# stays invisible to a worker that recently cached "no session".
+ACTIVE_SESSION_CACHE_TTL_SECONDS = 10
+
+# A session left open by a client that crashed (or a tab closed without
+# pressing Stop) must not keep claiming kicks days later.
+ACTIVE_SESSION_MAX_AGE_SECONDS = 12 * 3600
+
+# The legacy unauthenticated ingest endpoint (GET /esp-data) and its
+# anonymous LEGACY_DEVICE_ID have been REMOVED. They accepted telemetry
+# with no credentials at all, which -- combined with the previously
+# unauthenticated /api/session/start -- let any caller write arbitrary
+# rows into football_shots for a player they did not own. Every physical
+# unit now registers and authenticates with device_id + device_token via
+# POST /api/data (see firmware/smart_football/smart_football.ino).
 
 
 # ==========================================
@@ -147,6 +171,114 @@ def get_device_by_id(device_id):
         timeout=5,
     )
     rows = resp.json() if resp.ok else []
+    return rows[0] if rows else None
+
+
+class SessionStateUnavailable(Exception):
+    """The durable active-session binding could not be read, or a shot could
+    not be persisted.
+
+    Deliberately NOT swallowed on the ingest path: it is surfaced to the
+    device as a 503 so the firmware's offline buffer holds that kick and
+    retries it later (see sendReading/flushBuffer in the sketch -- anything
+    other than HTTP 200 is re-buffered). Swallowing it here is what "silently
+    dropped telemetry" looked like before."""
+
+
+def _select(table, params, strict=False):
+    """Service-role SELECT helper. Used by the ownership checks below --
+    they must see rows regardless of the caller's RLS scope, then decide
+    access explicitly, rather than relying on RLS to hide them.
+
+    Default (strict=False) returns [] on any failure, so an authorization
+    check that cannot reach Supabase fails CLOSED. strict=True raises
+    instead, for callers that must tell "no rows" apart from "couldn't
+    look"."""
+    if not SUPABASE_URL or not SUPABASE_SERVICE_ROLE_KEY:
+        if strict:
+            raise SessionStateUnavailable("Supabase not configured")
+        return []
+    try:
+        resp = requests.get(
+            f"{SUPABASE_URL}/rest/v1/{table}",
+            params=params,
+            headers=_supabase_headers(),
+            timeout=5,
+        )
+    except requests.RequestException as e:
+        logger.error("Supabase select on %s failed: %s", table, e)
+        if strict:
+            raise SessionStateUnavailable(f"select on {table} failed") from e
+        return []
+    if not resp.ok:
+        logger.error("Supabase select on %s failed: HTTP %s", table, resp.status_code)
+        if strict:
+            raise SessionStateUnavailable(f"select on {table} failed: HTTP {resp.status_code}")
+        return []
+    return resp.json()
+
+
+def _patch(table, params, payload):
+    """Service-role PATCH helper. Always raises on failure -- every caller
+    is a session lifecycle write whose failure the client must hear about,
+    rather than believing a session started or stopped when it did not."""
+    if not SUPABASE_URL or not SUPABASE_SERVICE_ROLE_KEY:
+        raise SessionStateUnavailable("Supabase not configured")
+    try:
+        resp = requests.patch(
+            f"{SUPABASE_URL}/rest/v1/{table}",
+            params=params,
+            json=payload,
+            headers=_supabase_headers(),
+            timeout=5,
+        )
+    except requests.RequestException as e:
+        raise SessionStateUnavailable(f"patch on {table} failed") from e
+    if not resp.ok:
+        raise SessionStateUnavailable(f"patch on {table} failed: HTTP {resp.status_code}")
+    return resp
+
+
+def user_owns_device(user_id, device_id):
+    """A device belongs to exactly one account (football_devices.owner_id).
+    Org membership deliberately does NOT grant device control -- a ball is
+    claimed by one person, and only that person can bind it to a session."""
+    device = get_device_by_id(device_id)
+    return bool(device) and device.get("owner_id") == user_id
+
+
+def user_can_access_player(user_id, player_id):
+    """Mirrors the football_players RLS model: the owning account, or any
+    member of the organization the player belongs to. Evaluated here
+    explicitly because session binding runs under the service role."""
+    rows = _select("football_players", {"id": f"eq.{player_id}", "select": "user_id,org_id"})
+    if not rows:
+        return False
+    player = rows[0]
+
+    if player.get("user_id") == user_id:
+        return True
+
+    org_id = player.get("org_id")
+    if not org_id:
+        return False
+
+    members = _select(
+        "football_org_members",
+        {"org_id": f"eq.{org_id}", "user_id": f"eq.{user_id}", "select": "user_id"},
+    )
+    return bool(members)
+
+
+def get_session_for_binding(session_id):
+    """The full football_sessions row a start request wants to bind to.
+    Returned rather than just an ownership boolean because start_session
+    checks owner, player, device and ended_at against it -- all from one
+    lookup."""
+    rows = _select(
+        "football_sessions",
+        {"id": f"eq.{session_id}", "select": "user_id,player_id,device_id,ended_at"},
+    )
     return rows[0] if rows else None
 
 
@@ -279,20 +411,82 @@ def _clamp(value, bounds):
     return max(lo, min(hi, value))
 
 
-def save_shot_to_supabase(device_id, reading):
-    if not SUPABASE_URL or not SUPABASE_SERVICE_ROLE_KEY:
-        logger.warning("Supabase not configured (see backend/.env.example) — skipping shot persistence")
-        return
+def _parse_timestamp(value):
+    """PostgREST timestamptz -> aware datetime, or None if unparseable."""
+    try:
+        return datetime.fromisoformat(str(value).replace("Z", "+00:00"))
+    except (TypeError, ValueError):
+        return None
 
-    active = device_active_session.get(device_id, {})
-    if not active.get("player_id"):
-        # No session running for this device — nothing to attribute this shot to.
+
+def get_active_session(device_id):
+    """Resolve which session (and therefore which player) this device's
+    kicks belong to, from the database -- so any process, including one
+    that just booted, reaches the same answer.
+
+    Returns {"session_id", "player_id"} or None. Raises
+    SessionStateUnavailable if the answer genuinely could not be looked up
+    and there is no cached binding to fall back on."""
+    now = time.time()
+    cached = device_session_cache.get(device_id)
+    if cached and now - cached["cached_at"] < ACTIVE_SESSION_CACHE_TTL_SECONDS:
+        return cached["binding"]
+
+    try:
+        rows = _select(
+            "football_sessions",
+            {
+                "device_id": f"eq.{device_id}",
+                "ended_at": "is.null",
+                "select": "id,player_id,started_at",
+                # Most recently started open session wins, so a stray older
+                # one that was never closed can't hijack the attribution.
+                "order": "started_at.desc",
+                "limit": "1",
+            },
+            strict=True,
+        )
+    except SessionStateUnavailable:
+        if cached:
+            # Better to keep attributing to the last known-good binding for a
+            # few seconds than to drop a real kick over a transient blip.
+            logger.warning(
+                "Active-session lookup failed for device %s — reusing last known binding", device_id
+            )
+            return cached["binding"]
+        raise
+
+    binding = None
+    if rows:
+        row = rows[0]
+        started_at = _parse_timestamp(row.get("started_at"))
+        age = (datetime.now(timezone.utc) - started_at).total_seconds() if started_at else 0
+
+        if not row.get("player_id"):
+            logger.warning("Open session %s on device %s has no player — ignoring", row.get("id"), device_id)
+        elif age > ACTIVE_SESSION_MAX_AGE_SECONDS:
+            logger.warning(
+                "Ignoring stale open session %s on device %s (%.1f hours old)",
+                row.get("id"), device_id, age / 3600,
+            )
+        else:
+            binding = {"session_id": row["id"], "player_id": row["player_id"]}
+
+    device_session_cache[device_id] = {"binding": binding, "cached_at": now}
+    return binding
+
+
+def save_shot_to_supabase(device_id, reading):
+    active = get_active_session(device_id)
+    if not active:
+        # No session running for this device — nothing to attribute this
+        # shot to. This is a normal state, not a failure.
         return
 
     payload = {
         "player_id": active["player_id"],
-        "session_id": active.get("session_id"),
-        "device_id": None if device_id == LEGACY_DEVICE_ID else device_id,
+        "session_id": active["session_id"],
+        "device_id": device_id,
         "speed": reading.get("speed", 0),
         "spin": reading.get("spin", 0),
         "force": reading.get("force", 0),
@@ -301,14 +495,19 @@ def save_shot_to_supabase(device_id, reading):
     }
 
     try:
-        requests.post(
+        resp = requests.post(
             f"{SUPABASE_URL}/rest/v1/football_shots",
             json=payload,
             headers=_supabase_headers(),
             timeout=5,
         )
     except requests.RequestException as e:
-        logger.error("Failed to save shot to Supabase for device %s: %s", device_id, e)
+        logger.error("Failed to save shot for device %s: %s", device_id, e)
+        raise SessionStateUnavailable("failed to persist shot") from e
+
+    if not resp.ok:
+        logger.error("Supabase rejected shot for device %s: HTTP %s", device_id, resp.status_code)
+        raise SessionStateUnavailable("failed to persist shot")
 
 
 def ingest_reading(device_id, data):
@@ -352,8 +551,14 @@ def receive_data():
             reading=reading,
         )
         return jsonify({"message": "Data received successfully"}), 200
-    except Exception as e:
-        return jsonify({"error": str(e)}), 500
+    except SessionStateUnavailable:
+        # Not 200 -> the firmware re-buffers this exact reading and retries,
+        # so the kick survives a Supabase blip instead of being dropped.
+        logger.error("Session state unavailable while ingesting for device %s", device["id"])
+        return jsonify({"error": "session state temporarily unavailable, retry"}), 503
+    except Exception:
+        logger.exception("Ingest failed for device %s", device["id"])
+        return jsonify({"error": "failed to ingest reading"}), 500
 
 
 # Batch flush for a device's offline buffer -- same auth as /api/data, but
@@ -385,20 +590,12 @@ def receive_data_batch():
             reading=last_reading,
         )
         return jsonify({"message": f"{len(readings)} readings received"}), 200
-    except Exception as e:
-        return jsonify({"error": str(e)}), 500
-
-
-# Old firmware sends a GET with query params here (/esp-data?speed=..&spin=..).
-# Kept so an already-flashed board works without re-uploading, but see the
-# LEGACY_DEVICE_ID note above -- this is not multi-tenant safe.
-@app.route("/esp-data", methods=["GET"])
-def receive_data_legacy():
-    try:
-        ingest_reading(LEGACY_DEVICE_ID, request.args)
-        return jsonify({"message": "Data received successfully"}), 200
-    except Exception as e:
-        return jsonify({"error": str(e)}), 500
+    except SessionStateUnavailable:
+        logger.error("Session state unavailable while batch-ingesting for device %s", device["id"])
+        return jsonify({"error": "session state temporarily unavailable, retry"}), 503
+    except Exception:
+        logger.exception("Batch ingest failed for device %s", device["id"])
+        return jsonify({"error": "failed to ingest readings"}), 500
 
 
 # ==========================================
@@ -406,8 +603,18 @@ def receive_data_legacy():
 # ==========================================
 
 @app.route("/data", methods=["GET"])
-def get_data():
-    device_id = request.args.get("device_id", LEGACY_DEVICE_ID)
+@require_user_auth
+def get_data(user_id):
+    """Live snapshot for one device. The dashboard reads this from Supabase
+    Realtime instead (see src/pages/Dashboard.jsx), so this endpoint has no
+    first-party caller left -- but it used to serve any device_id to anyone
+    who asked, so it is now scoped to a device the caller actually owns."""
+    device_id = request.args.get("device_id")
+    if not device_id:
+        return jsonify({"error": "device_id is required"}), 400
+
+    if not user_owns_device(user_id, device_id):
+        return jsonify({"error": "device not found or not yours"}), 403
 
     state = device_state.get(device_id)
 
@@ -422,22 +629,107 @@ def get_data():
 # SESSION CONTEXT (which player is currently recording, per device)
 # ==========================================
 
+# This is the binding that decides which player every subsequent kick from
+# a given ball is written to. It was previously unauthenticated, so anyone
+# could point any device at any player_id. Every field is now verified
+# against the caller's own identity before it is trusted:
+#   device_id  -> must be a device this account claimed (football_devices.owner_id)
+#   player_id  -> must be the caller's own player, or one in their org (mirrors RLS)
+#   session_id -> must be an open session row the caller owns, for the same
+#                 player and the same device
+#
+# session_id is REQUIRED (it was optional before): that row IS the durable
+# binding, so there is nothing for a restarted process to recover without it.
 @app.route("/api/session/start", methods=["POST"])
-def start_session():
+@require_user_auth
+def start_session(user_id):
     data = request.json or {}
-    device_id = data.get("device_id", LEGACY_DEVICE_ID)
-    device_active_session[device_id] = {
-        "session_id": data.get("session_id"),
-        "player_id": data.get("player_id"),
-    }
-    return jsonify({"message": "Session started", **device_active_session[device_id]}), 200
+    device_id = data.get("device_id")
+    player_id = data.get("player_id")
+    session_id = data.get("session_id")
+
+    if not device_id or not player_id or not session_id:
+        return jsonify({"error": "device_id, player_id and session_id are required"}), 400
+
+    if not SUPABASE_URL or not SUPABASE_SERVICE_ROLE_KEY:
+        return jsonify({"error": "Supabase not configured"}), 503
+
+    if not user_owns_device(user_id, device_id):
+        return jsonify({"error": "device not found or not yours"}), 403
+
+    if not user_can_access_player(user_id, player_id):
+        return jsonify({"error": "player not found or not yours"}), 403
+
+    session_row = get_session_for_binding(session_id)
+    if not session_row or session_row.get("user_id") != user_id:
+        return jsonify({"error": "session not found or not yours"}), 403
+
+    # The row is the source of truth for attribution, so the request must
+    # agree with it -- otherwise a caller could bind a session recorded for
+    # one player to kicks taken by another.
+    if session_row.get("player_id") != player_id:
+        return jsonify({"error": "session belongs to a different player"}), 400
+
+    if session_row.get("ended_at"):
+        return jsonify({"error": "session has already ended"}), 409
+
+    if session_row.get("device_id") not in (None, device_id):
+        return jsonify({"error": "session is bound to a different device"}), 400
+
+    now_iso = datetime.now(timezone.utc).isoformat()
+
+    try:
+        # Close any other session still open on this ball first, so exactly
+        # one open row can ever match the durable lookup for this device.
+        _patch(
+            "football_sessions",
+            {"device_id": f"eq.{device_id}", "ended_at": "is.null", "id": f"neq.{session_id}"},
+            {"ended_at": now_iso},
+        )
+        # A session created without a device_id would be invisible to the
+        # durable lookup, which keys on it.
+        if session_row.get("device_id") is None:
+            _patch("football_sessions", {"id": f"eq.{session_id}"}, {"device_id": device_id})
+    except SessionStateUnavailable:
+        logger.exception("Could not establish durable session binding for device %s", device_id)
+        return jsonify({"error": "could not start session, please retry"}), 503
+
+    binding = {"session_id": session_id, "player_id": player_id}
+    device_session_cache[device_id] = {"binding": binding, "cached_at": time.time()}
+    logger.info("Session %s started on device %s by user %s", session_id, device_id, user_id)
+    return jsonify({"message": "Session started", **binding}), 200
 
 
 @app.route("/api/session/stop", methods=["POST"])
-def stop_session():
+@require_user_auth
+def stop_session(user_id):
     data = request.json or {}
-    device_id = data.get("device_id", LEGACY_DEVICE_ID)
-    device_active_session.pop(device_id, None)
+    device_id = data.get("device_id")
+
+    if not device_id:
+        return jsonify({"error": "device_id is required"}), 400
+
+    # Ownership is checked on stop too -- otherwise anyone could silently
+    # end a coach's recording session and drop every kick after it.
+    if not user_owns_device(user_id, device_id):
+        return jsonify({"error": "device not found or not yours"}), 403
+
+    # Closing the row is what actually stops attribution; dropping the cache
+    # entry alone would be undone by the next lookup. Idempotent: the
+    # frontend also sets ended_at itself, and matching zero rows is fine.
+    try:
+        _patch(
+            "football_sessions",
+            {"device_id": f"eq.{device_id}", "ended_at": "is.null"},
+            {"ended_at": datetime.now(timezone.utc).isoformat()},
+        )
+    except SessionStateUnavailable:
+        device_session_cache.pop(device_id, None)
+        logger.exception("Could not close active session for device %s", device_id)
+        return jsonify({"error": "could not stop session, please retry"}), 503
+
+    device_session_cache.pop(device_id, None)
+    logger.info("Session stopped on device %s by user %s", device_id, user_id)
     return jsonify({"message": "Session stopped"}), 200
 
 
@@ -522,11 +814,12 @@ if __name__ == "__main__":
     # debug mode exposes an interactive in-browser code executor to anyone
     # who finds the URL. Set FLASK_DEBUG=1 locally if you want it back.
     #
-    # Single worker only: device_state / device_active_session are
-    # in-process dicts (see note near the top of this file). Render's free
-    # tier already only gives one worker, so this matches reality, but if
-    # you ever move to a paid tier with multiple workers, this breaks
-    # silently -- move that state into Redis or Supabase first.
+    # Multi-worker safe for session attribution: the active-session binding
+    # lives in football_sessions (see the state block near the top of this
+    # file), so any worker -- including a freshly started one after a Render
+    # sleep or redeploy -- rebuilds it from the database. device_state and
+    # device_session_cache are per-process caches over durable data, so the
+    # worst a second worker costs is an extra lookup, not lost shots.
     app.run(
         host="0.0.0.0",
         port=int(os.environ.get("PORT", 5000)),

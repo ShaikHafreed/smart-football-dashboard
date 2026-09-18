@@ -3,7 +3,7 @@ import { motion } from "framer-motion";
 import { Play, Square, RotateCcw, User } from "lucide-react";
 import { supabase } from "../lib/supabaseClient";
 import { useAuth } from "../lib/AuthContext";
-import { FLASK_URL as FLASK } from "../lib/flaskClient";
+import { authedFetch } from "../lib/flaskClient";
 
 export default function Session() {
   const { user, role, ensureSelfPlayer } = useAuth();
@@ -85,11 +85,20 @@ export default function Session() {
     sessionIdRef.current = data.id;
 
     try {
-      await fetch(`${FLASK}/api/session/start`, {
+      // Authenticated: the relay verifies this account actually owns the
+      // ball and can access the player before it binds kicks to them.
+      const resp = await authedFetch("/api/session/start", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ session_id: data.id, player_id: activePlayer.id, device_id: activeDeviceId }),
       });
+
+      if (!resp.ok) {
+        // The session row exists, but the relay won't attribute kicks to
+        // it — say so instead of silently recording nothing.
+        const body = await resp.json().catch(() => ({}));
+        setError(body.error || "The hardware relay rejected this session — kicks won't be recorded.");
+      }
     } catch {
       // Hardware relay offline — the session row is still recorded in Supabase.
     }
@@ -109,7 +118,7 @@ export default function Session() {
 
     try {
       const activeDeviceId = localStorage.getItem("activeDeviceId") || "";
-      await fetch(`${FLASK}/api/session/stop`, {
+      await authedFetch("/api/session/stop", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ device_id: activeDeviceId }),

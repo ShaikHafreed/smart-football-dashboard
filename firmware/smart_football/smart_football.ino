@@ -11,13 +11,15 @@ Preferences prefs;
 
 #define FW_VERSION "1.1.0"
 
-// Tried in order at boot and on reconnect. Add a venue's network here
-// ahead of an event instead of reflashing on-site.
+// Wi-Fi credentials are NOT stored in this file -- they live in secrets.h,
+// which is gitignored. Copy secrets.example.h to secrets.h and fill in your
+// own networks before flashing. Tried in order at boot and on reconnect;
+// add a venue's network to secrets.h ahead of an event instead of
+// reflashing on-site.
+#include "secrets.h"
+
 struct WifiNetwork { const char* ssid; const char* password; };
-WifiNetwork knownNetworks[] = {
-  {"AirFiber-VZS0-SR", "11223344"},
-  // {"venue-wifi-name", "venue-password"},
-};
+WifiNetwork knownNetworks[] = WIFI_NETWORKS;
 const int knownNetworkCount = sizeof(knownNetworks) / sizeof(knownNetworks[0]);
 
 // Public backend host (no scheme, no trailing slash) — this is what makes
