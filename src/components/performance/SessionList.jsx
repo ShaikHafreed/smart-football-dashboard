@@ -1,8 +1,8 @@
 import { useEffect, useState } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { ChevronDown, Loader2, Trophy, Gauge, RotateCw, CalendarClock } from "lucide-react";
-import { supabase } from "../../lib/supabaseClient";
 import { summarizeSession } from "../../lib/performanceMetrics";
+import { fetchSessionsWithShots, SESSION_LIST_LIMIT } from "../../lib/analyticsQueries";
 
 /**
  * Sessions (most recent first), each expandable to show its kicks and the
@@ -17,6 +17,8 @@ export default function SessionList({ playerIds, playerNames }) {
   const [shotsBySession, setShotsBySession] = useState({});
   const [loading, setLoading] = useState(true);
   const [openId, setOpenId] = useState(null);
+  const [capped, setCapped] = useState(false);
+  const [error, setError] = useState("");
 
   useEffect(() => {
     if (!playerIds || playerIds.length === 0) {
@@ -24,29 +26,24 @@ export default function SessionList({ playerIds, playerNames }) {
       return;
     }
 
+    // Bounded to the most recent sessions, and the kicks fetched are only the
+    // ones belonging to them -- previously this pulled every session and every
+    // shot across all of them, which is the single largest payload in the app
+    // for an established player.
     const load = async () => {
-      const { data: sessionRows } = await supabase
-        .from("football_sessions")
-        .select("id, player_id, started_at, ended_at")
-        .in("player_id", playerIds)
-        .order("started_at", { ascending: false });
+      const { data, error: loadError, shotsBySession: grouped, capped: hitLimit } =
+        await fetchSessionsWithShots(playerIds);
 
-      const ids = (sessionRows || []).map((s) => s.id);
-
-      const { data: shotRows } = ids.length
-        ? await supabase
-            .from("football_shots")
-            .select("session_id, speed, spin, force, distance, shot_type, created_at")
-            .in("session_id", ids)
-        : { data: [] };
-
-      const grouped = {};
-      for (const shot of shotRows || []) {
-        (grouped[shot.session_id] ||= []).push(shot);
+      if (loadError) {
+        setError("Couldn't load sessions — check your connection and try again.");
+        setLoading(false);
+        return;
       }
 
-      setSessions(sessionRows || []);
+      setError("");
+      setSessions(data);
       setShotsBySession(grouped);
+      setCapped(hitLimit);
       setLoading(false);
     };
 
@@ -61,6 +58,12 @@ export default function SessionList({ playerIds, playerNames }) {
     );
   }
 
+  if (error) {
+    return (
+      <p className="rounded-lg bg-destructive/10 px-3 py-2 text-center text-sm text-destructive">{error}</p>
+    );
+  }
+
   if (sessions.length === 0) {
     return (
       <p className="rounded-xl border border-dashed border-border p-6 text-center text-sm text-muted-foreground">
@@ -71,6 +74,11 @@ export default function SessionList({ playerIds, playerNames }) {
 
   return (
     <div className="space-y-2">
+      {capped && (
+        <p className="text-xs text-muted-foreground">
+          Showing the {SESSION_LIST_LIMIT} most recent sessions.
+        </p>
+      )}
       {sessions.map((session) => {
         const shots = shotsBySession[session.id] || [];
         const summary = summarizeSession(shots);

@@ -1,10 +1,12 @@
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { motion } from "framer-motion";
 import { Loader2, Radar, Download, Search, ChevronLeft, ChevronRight } from "lucide-react";
 import { supabase } from "../lib/supabaseClient";
 import { downloadCsv } from "../utils/csv";
+import { fetchShotHistoryPage, HISTORY_PAGE_SIZE } from "../lib/analyticsQueries";
 
-const PAGE_SIZE = 25;
+const PAGE_SIZE = HISTORY_PAGE_SIZE;
+const REALTIME_COALESCE_MS = 2000;
 
 export default function History() {
   const [data, setData] = useState([]);
@@ -14,58 +16,84 @@ export default function History() {
   const [totalCount, setTotalCount] = useState(0);
   const [playerFilter, setPlayerFilter] = useState("");
   const [search, setSearch] = useState("");
+  // The term actually sent to the database, a beat behind the input.
+  const [appliedSearch, setAppliedSearch] = useState("");
+  const [error, setError] = useState("");
 
-  const load = async (pageIndex) => {
+  // Search now runs in the database rather than over the rows already
+  // fetched, so it covers the whole history and the pager's total count
+  // stays consistent with what is being searched.
+  const load = useCallback(async (pageIndex) => {
     setLoading(true);
 
-    let query = supabase
-      .from("football_shots")
-      .select("id, speed, spin, force, distance, shot_type, created_at, football_players(id, name)", { count: "exact" })
-      .order("created_at", { ascending: false })
-      .range(pageIndex * PAGE_SIZE, pageIndex * PAGE_SIZE + PAGE_SIZE - 1);
+    const { data: rows, error: loadError, count } = await fetchShotHistoryPage({
+      page: pageIndex,
+      pageSize: PAGE_SIZE,
+      playerId: playerFilter,
+      search: appliedSearch,
+    });
 
-    if (playerFilter) {
-      query = query.eq("player_id", playerFilter);
+    if (loadError) {
+      setError("Couldn't load shot history — check your connection and try again.");
+      setData([]);
+      setTotalCount(0);
+    } else {
+      setError("");
+      setData(rows);
+      setTotalCount(count);
     }
 
-    const { data: rows, count } = await query;
-    setData(rows || []);
-    setTotalCount(count || 0);
     setLoading(false);
-  };
+  }, [playerFilter, appliedSearch]);
 
   useEffect(() => {
     supabase.from("football_players").select("id, name").order("name").then(({ data }) => setPlayers(data || []));
   }, []);
 
   useEffect(() => {
+    const timer = setTimeout(() => {
+      setAppliedSearch(search);
+      setPage(0);
+    }, 300);
+    return () => clearTimeout(timer);
+  }, [search]);
+
+  useEffect(() => {
     load(page);
-  }, [page, playerFilter]);
+  }, [page, load]);
 
   // New shots appear at the top of page 0 automatically, without a
   // manual refresh — but only while looking at the first page + no active
   // player filter, so a live insert doesn't silently reshuffle a coach's
   // filtered/paged view out from under them.
   useEffect(() => {
-    if (page !== 0 || playerFilter) return;
+    if (page !== 0 || playerFilter || appliedSearch) return;
+
+    let pending = null;
 
     const channel = supabase
       .channel("history-live")
       .on(
         "postgres_changes",
         { event: "INSERT", schema: "public", table: "football_shots" },
-        () => load(0)
+        () => {
+          // One refresh per burst of kicks, not one per kick.
+          if (pending) return;
+          pending = setTimeout(() => {
+            pending = null;
+            load(0);
+          }, REALTIME_COALESCE_MS);
+        }
       )
       .subscribe();
 
-    return () => supabase.removeChannel(channel);
-  }, [page, playerFilter]);
+    return () => {
+      if (pending) clearTimeout(pending);
+      supabase.removeChannel(channel);
+    };
+  }, [page, playerFilter, appliedSearch, load]);
 
-  const visible = useMemo(() => {
-    if (!search.trim()) return data;
-    const q = search.trim().toLowerCase();
-    return data.filter((item) => (item.football_players?.name || "unknown").toLowerCase().includes(q));
-  }, [data, search]);
+  const visible = data; // the query already applied the filters
 
   const totalPages = Math.max(1, Math.ceil(totalCount / PAGE_SIZE));
 
@@ -93,7 +121,7 @@ export default function History() {
           <input
             value={search}
             onChange={(e) => setSearch(e.target.value)}
-            placeholder="Search this page by player name…"
+            placeholder="Search all history by player name…"
             className="w-full rounded-lg border border-border bg-background py-2 pl-9 pr-3 text-sm outline-none focus:ring-2 focus:ring-primary/40"
           />
         </div>
@@ -116,10 +144,16 @@ export default function History() {
         </div>
       )}
 
-      {!loading && visible.length === 0 && (
+      {error && (
+        <p className="rounded-lg bg-destructive/10 px-3 py-2 text-center text-sm text-destructive">{error}</p>
+      )}
+
+      {!loading && !error && visible.length === 0 && (
         <div className="flex flex-col items-center gap-2 rounded-xl border border-dashed border-border p-10 text-center text-muted-foreground">
           <Radar className="h-6 w-6" />
-          {data.length === 0 ? "No shots recorded yet — run a Session with a player selected." : "No shots on this page match that search."}
+          {appliedSearch || playerFilter
+            ? "No shots match that search."
+            : "No shots recorded yet — run a Session with a player selected."}
         </div>
       )}
 

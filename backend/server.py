@@ -1,3 +1,4 @@
+import hashlib
 import hmac
 import logging
 import os
@@ -26,6 +27,36 @@ SUPABASE_SERVICE_ROLE_KEY = os.environ.get("SUPABASE_SERVICE_ROLE_KEY")
 
 app = Flask(__name__)
 
+# A trailing-slash redirect on a POST would re-send the request -- device
+# token and all -- to the redirect target. Treating /api/data/ as /api/data
+# removes that class of surprise rather than relying on nobody typing it.
+app.url_map.strict_slashes = False
+
+# Render (like any PaaS) terminates TLS at a proxy and forwards the original
+# client details in X-Forwarded-* headers. Those headers are trivially
+# spoofable by whoever talks to the app directly, so they are only believed
+# when the deployment states it really is behind a proxy -- see
+# TRUST_PROXY_HEADERS in backend/render.yaml.
+TRUST_PROXY_HEADERS = os.environ.get("TRUST_PROXY_HEADERS") == "1"
+
+
+def _forwarded_header(name):
+    """First value of a comma-joined X-Forwarded-* header, or ''."""
+    raw = request.headers.get(name, "")
+    return raw.split(",")[0].strip() if raw else ""
+
+
+def _client_ip():
+    """Rate-limit identity. Without this, request.remote_addr behind Render
+    is the proxy, so every device on earth shares one bucket and the
+    10/hour registration limit becomes a fleet-wide limit -- one noisy board
+    locking everyone else out of provisioning."""
+    if TRUST_PROXY_HEADERS:
+        forwarded = _forwarded_header("X-Forwarded-For")
+        if forwarded:
+            return forwarded
+    return get_remote_address()
+
 # Real deployed origins by default; override with a comma-separated
 # ALLOWED_ORIGINS env var rather than editing code for a new frontend
 # deployment (a preview URL, a new custom domain, etc).
@@ -40,7 +71,37 @@ CORS(app, origins=ALLOWED_ORIGINS)
 # In-memory store, matching the single-worker reality documented at the
 # bottom of this file -- move to a shared backend (Redis) before scaling
 # past one worker, same caveat as device_state below.
-limiter = Limiter(get_remote_address, app=app, default_limits=["200 per minute"], storage_uri="memory://")
+limiter = Limiter(_client_ip, app=app, default_limits=["200 per minute"], storage_uri="memory://")
+
+
+@app.before_request
+def require_https():
+    """Every request to this service carries a credential: a device token, or
+    a user's Supabase access token. If the edge proxy reports the client
+    spoke plain HTTP, that credential has already crossed the network in the
+    clear -- so this refuses the request instead of redirecting it. A 307/308
+    would helpfully re-send the very secret that just leaked.
+
+    No header at all means nothing is in front of us (local development),
+    where the connection is not crossing a network to begin with."""
+    if request.path == "/healthz":
+        return None
+    if _forwarded_header("X-Forwarded-Proto") == "http":
+        return jsonify({"error": "HTTPS is required"}), 403
+    return None
+
+
+@app.after_request
+def security_headers(response):
+    response.headers.setdefault("X-Content-Type-Options", "nosniff")
+    response.headers.setdefault("X-Frame-Options", "DENY")
+    response.headers.setdefault("Referrer-Policy", "no-referrer")
+    # Only meaningful over HTTPS, and only honoured there.
+    if _forwarded_header("X-Forwarded-Proto") == "https":
+        response.headers.setdefault(
+            "Strict-Transport-Security", "max-age=31536000; includeSubDomains"
+        )
+    return response
 
 FIRMWARE_DIR = os.path.join(os.path.dirname(__file__), "firmware_releases")
 os.makedirs(FIRMWARE_DIR, exist_ok=True)
@@ -148,29 +209,17 @@ def require_user_auth(fn):
     return wrapper
 
 
-def get_device_by_uid(device_uid):
-    if not SUPABASE_URL or not SUPABASE_SERVICE_ROLE_KEY:
-        return None
-    resp = requests.get(
-        f"{SUPABASE_URL}/rest/v1/football_devices",
-        params={"device_uid": f"eq.{device_uid}", "select": "*"},
-        headers=_supabase_headers(),
-        timeout=5,
-    )
-    rows = resp.json() if resp.ok else []
+def get_device_by_uid(device_uid, strict=False):
+    rows = _select("football_devices", {"device_uid": f"eq.{device_uid}", "select": "*"}, strict=strict)
     return rows[0] if rows else None
 
 
-def get_device_by_id(device_id):
-    if not SUPABASE_URL or not SUPABASE_SERVICE_ROLE_KEY:
-        return None
-    resp = requests.get(
-        f"{SUPABASE_URL}/rest/v1/football_devices",
-        params={"id": f"eq.{device_id}", "select": "*"},
-        headers=_supabase_headers(),
-        timeout=5,
-    )
-    rows = resp.json() if resp.ok else []
+def get_device_by_id(device_id, strict=False):
+    """strict=True is for the ingest path: a device whose row could not be
+    looked up must not be reported as "bad credentials", because the
+    firmware now treats 401 as "I have been revoked" and wipes its identity.
+    A transient Supabase failure has to surface as 503 instead."""
+    rows = _select("football_devices", {"id": f"eq.{device_id}", "select": "*"}, strict=strict)
     return rows[0] if rows else None
 
 
@@ -218,24 +267,37 @@ def _select(table, params, strict=False):
     return resp.json()
 
 
-def _patch(table, params, payload):
+def _patch(table, params, payload, returning=False):
     """Service-role PATCH helper. Always raises on failure -- every caller
     is a session lifecycle write whose failure the client must hear about,
     rather than believing a session started or stopped when it did not."""
     if not SUPABASE_URL or not SUPABASE_SERVICE_ROLE_KEY:
         raise SessionStateUnavailable("Supabase not configured")
+    headers = _supabase_headers()
+    if returning:
+        # Lets the caller see WHICH rows the filter actually matched, so a
+        # conditional write (claim only if still unclaimed) can tell "done"
+        # apart from "someone got there first".
+        headers = {**headers, "Prefer": "return=representation"}
+
     try:
         resp = requests.patch(
             f"{SUPABASE_URL}/rest/v1/{table}",
             params=params,
             json=payload,
-            headers=_supabase_headers(),
+            headers=headers,
             timeout=5,
         )
     except requests.RequestException as e:
         raise SessionStateUnavailable(f"patch on {table} failed") from e
     if not resp.ok:
         raise SessionStateUnavailable(f"patch on {table} failed: HTTP {resp.status_code}")
+
+    if returning:
+        try:
+            return resp.json() or []
+        except ValueError:
+            return []
     return resp
 
 
@@ -282,22 +344,65 @@ def get_session_for_binding(session_id):
     return rows[0] if rows else None
 
 
+# Device secrets are 256 bits of CSPRNG output, not user-chosen passwords,
+# so a single SHA-256 is the right primitive here: there is nothing to
+# brute-force and no need for a slow KDF. The pairing code is short enough
+# to be typed by a human, so it is salted with the device_uid to stop one
+# precomputed table covering every device.
+def _hash_secret(value):
+    return hashlib.sha256(str(value).encode("utf-8")).hexdigest()
+
+
+def _hash_pairing_code(device_uid, pairing_code):
+    return hashlib.sha256(f"{device_uid}:{str(pairing_code).strip().upper()}".encode("utf-8")).hexdigest()
+
+
+def _upgrade_token_to_hash(device_id, device_token):
+    """Migrate one device from a plaintext token to a hash, the first time
+    it authenticates after this change. Best effort: a failure here must
+    not reject an otherwise valid device, it just gets retried next time."""
+    try:
+        _patch(
+            "football_devices",
+            {"id": f"eq.{device_id}"},
+            {"device_token_hash": _hash_secret(device_token), "device_token": None},
+        )
+        logger.info("Upgraded device %s to a hashed token", device_id)
+    except SessionStateUnavailable:
+        logger.warning("Could not upgrade device %s to a hashed token yet", device_id)
+
+
 def authenticate_device(data):
     """Validate device_id + device_token from a request body. Returns the
-    device row on success, or None. Token comparison is constant-time to
-    avoid leaking the correct token one character at a time via timing."""
+    device row on success, or None. Comparison is constant-time either way,
+    to avoid leaking the correct value one character at a time via timing.
+
+    Raises SessionStateUnavailable if the device row could not be read at
+    all -- see get_device_by_id's note on why that must not look like a
+    rejected credential."""
     device_id = data.get("device_id")
     device_token = data.get("device_token")
     if not device_id or not device_token:
         return None
 
-    device = get_device_by_id(device_id)
+    device = get_device_by_id(device_id, strict=True)
     if not device or not device.get("is_active", True):
         return None
 
-    if not hmac.compare_digest(device["device_token"], str(device_token)):
+    stored_hash = device.get("device_token_hash")
+    if stored_hash:
+        if not hmac.compare_digest(str(stored_hash), _hash_secret(device_token)):
+            return None
+        return device
+
+    # Transitional: a device flashed before hashed tokens existed. Accept its
+    # plaintext token once, then upgrade the row in place so the plaintext
+    # stops existing -- no fleet-wide re-provisioning, no device left behind.
+    legacy_token = device.get("device_token")
+    if not legacy_token or not hmac.compare_digest(str(legacy_token), str(device_token)):
         return None
 
+    _upgrade_token_to_hash(device["id"], device_token)
     return device
 
 
@@ -346,39 +451,218 @@ def touch_device(device_id, firmware_version=None, battery_pct=None, wifi_rssi=N
 # DEVICE REGISTRATION + PAIRING
 # ==========================================
 
+PAIRING_CODE_MIN_LEN = 6
+PAIRING_CODE_MAX_LEN = 32
+
+
 @app.route("/api/device/register", methods=["POST"])
 @limiter.limit("10 per hour")
 def register_device():
-    """Called once by firmware on its very first boot (no stored token
-    yet). Creates an unclaimed device row and returns its credentials.
-    If device_uid already exists, returns 409 WITHOUT the token -- an
-    already-registered device must already have its token in NVS; this
-    endpoint must never let someone re-fetch a lost token just by knowing
-    (or guessing) a device_uid."""
+    """First-boot provisioning. Necessarily unauthenticated -- a ball being
+    flashed has no user attached to it yet -- so the trust does not come
+    from this call. It comes from what the board supplies: a pairing_code it
+    generated itself and prints to Serial, stored here only as a salted
+    hash. Claiming the device later requires producing that code, so
+    registering a device_uid you don't physically have gets you nothing.
+
+    A device that is already CLAIMED is never re-provisioned here: 409, no
+    credentials. Its owner must release it first (POST /api/device/release).
+    An UNCLAIMED identity has no one relying on it yet, so a repeat
+    registration rotates its credentials instead of failing -- that is what
+    lets a board whose NVS was erased recover on its own, and what makes
+    pre-registering someone else's device_uid pointless: the real board
+    takes the identity back the moment it boots."""
     data = request.json or {}
-    device_uid = data.get("device_uid")
+    device_uid = (data.get("device_uid") or "").strip()
+    pairing_code = (data.get("pairing_code") or "").strip()
+
     if not device_uid:
         return jsonify({"error": "device_uid is required"}), 400
+
+    if not PAIRING_CODE_MIN_LEN <= len(pairing_code) <= PAIRING_CODE_MAX_LEN:
+        return jsonify({"error": "a pairing_code of 6-32 characters is required"}), 400
 
     if not SUPABASE_URL or not SUPABASE_SERVICE_ROLE_KEY:
         return jsonify({"error": "Supabase not configured"}), 503
 
-    existing = get_device_by_uid(device_uid)
-    if existing:
-        return jsonify({"error": "device already registered"}), 409
+    try:
+        existing = get_device_by_uid(device_uid, strict=True)
+    except SessionStateUnavailable:
+        return jsonify({"error": "registration temporarily unavailable, retry"}), 503
 
     device_token = secrets.token_hex(32)
-    resp = requests.post(
-        f"{SUPABASE_URL}/rest/v1/football_devices",
-        json={"device_uid": device_uid, "device_token": device_token},
-        headers={**_supabase_headers(), "Prefer": "return=representation"},
-        timeout=5,
-    )
+    credentials = {
+        "device_token_hash": _hash_secret(device_token),
+        "pairing_code_hash": _hash_pairing_code(device_uid, pairing_code),
+    }
+
+    if existing:
+        if existing.get("owner_id"):
+            logger.info("Refused re-registration of claimed device %s", existing["id"])
+            return jsonify({"error": "device already registered and claimed"}), 409
+
+        try:
+            # Filtered on owner_id is null: if someone claims it in the gap,
+            # nothing is written and no credentials are handed out.
+            rows = _patch(
+                "football_devices",
+                {"id": f"eq.{existing['id']}", "owner_id": "is.null"},
+                {**credentials, "device_token": None, "is_active": True},
+                returning=True,
+            )
+        except SessionStateUnavailable:
+            return jsonify({"error": "registration temporarily unavailable, retry"}), 503
+
+        if not rows:
+            return jsonify({"error": "device already registered and claimed"}), 409
+
+        logger.info("Re-provisioned unclaimed device %s", existing["id"])
+        return jsonify({"device_id": existing["id"], "device_token": device_token}), 200
+
+    try:
+        resp = requests.post(
+            f"{SUPABASE_URL}/rest/v1/football_devices",
+            json={"device_uid": device_uid, **credentials},
+            headers={**_supabase_headers(), "Prefer": "return=representation"},
+            timeout=5,
+        )
+    except requests.RequestException as e:
+        logger.error("Device registration failed for uid %s: %s", device_uid, e)
+        return jsonify({"error": "failed to register device"}), 500
+
     if not resp.ok:
+        logger.error("Device registration rejected for uid %s: HTTP %s", device_uid, resp.status_code)
         return jsonify({"error": "failed to register device"}), 500
 
     row = resp.json()[0]
+    logger.info("Registered new device %s", row["id"])
     return jsonify({"device_id": row["id"], "device_token": device_token}), 201
+
+
+# Deliberately identical for "no such device", "wrong code" and "already
+# someone else's": claiming must not double as a way to find out which
+# device_uids exist or which are taken.
+CLAIM_FAILED = {"error": "no unclaimed device matches that ID and pairing code"}
+
+
+@app.route("/api/device/claim", methods=["POST"])
+@limiter.limit("20 per hour")
+@require_user_auth
+def claim_device(user_id):
+    """Take ownership of a ball by proving you are holding it.
+
+    Claiming used to be a plain client-side UPDATE any signed-in user could
+    run against any unclaimed row, with the list of unclaimed devices handed
+    out to everyone -- first to look, wins. It now requires the pairing code
+    the board prints to Serial, checked server-side against a salted hash."""
+    data = request.json or {}
+    device_uid = (data.get("device_uid") or "").strip()
+    pairing_code = (data.get("pairing_code") or "").strip()
+
+    if not device_uid or not pairing_code:
+        return jsonify({"error": "device_uid and pairing_code are required"}), 400
+
+    if not SUPABASE_URL or not SUPABASE_SERVICE_ROLE_KEY:
+        return jsonify({"error": "Supabase not configured"}), 503
+
+    try:
+        device = get_device_by_uid(device_uid, strict=True)
+    except SessionStateUnavailable:
+        return jsonify({"error": "claim temporarily unavailable, retry"}), 503
+
+    if not device:
+        return jsonify(CLAIM_FAILED), 404
+
+    # Idempotent for the rightful owner: re-submitting a claim (a retry, a
+    # double-tap) is not an error.
+    if device.get("owner_id") == user_id:
+        return jsonify({"message": "Device already claimed", "device_id": device["id"]}), 200
+
+    if device.get("owner_id"):
+        logger.info("Rejected claim on already-owned device %s by user %s", device["id"], user_id)
+        return jsonify(CLAIM_FAILED), 404
+
+    stored_code_hash = device.get("pairing_code_hash")
+    if not stored_code_hash:
+        # Registered by firmware that predates pairing codes. It cannot prove
+        # possession, so it cannot be claimed until it re-provisions.
+        return jsonify({
+            "error": "this ball needs updated firmware before it can be paired — "
+                     "reflash it and power-cycle it, then pair with the code it prints"
+        }), 409
+
+    if not hmac.compare_digest(str(stored_code_hash), _hash_pairing_code(device_uid, pairing_code)):
+        logger.info("Rejected claim with bad pairing code on device %s by user %s", device["id"], user_id)
+        return jsonify(CLAIM_FAILED), 404
+
+    try:
+        rows = _patch(
+            "football_devices",
+            {"id": f"eq.{device['id']}", "owner_id": "is.null"},
+            {"owner_id": user_id, "claimed_at": datetime.now(timezone.utc).isoformat()},
+            returning=True,
+        )
+    except SessionStateUnavailable:
+        return jsonify({"error": "claim temporarily unavailable, retry"}), 503
+
+    if not rows:
+        # Lost the race against a concurrent claim.
+        return jsonify({"error": "that device was just claimed by someone else"}), 409
+
+    logger.info("Device %s claimed by user %s", device["id"], user_id)
+    return jsonify({"message": "Device claimed", "device_id": device["id"]}), 200
+
+
+@app.route("/api/device/release", methods=["POST"])
+@limiter.limit("20 per hour")
+@require_user_auth
+def release_device(user_id):
+    """Give up a ball: for handing it to someone else, or for killing a
+    lost/stolen one's credentials immediately.
+
+    Releasing revokes the device's token as well as its ownership, so the
+    previous owner's board cannot keep writing telemetry into an account
+    that no longer owns it. Deactivated and credential-less, the board's
+    next request is rejected, which makes it re-register (new token, new
+    pairing code) and become claimable again by whoever physically has it."""
+    data = request.json or {}
+    device_id = data.get("device_id")
+
+    if not device_id:
+        return jsonify({"error": "device_id is required"}), 400
+
+    if not user_owns_device(user_id, device_id):
+        return jsonify({"error": "device not found or not yours"}), 403
+
+    now_iso = datetime.now(timezone.utc).isoformat()
+
+    try:
+        # A released ball must not still be recording for its old owner.
+        _patch(
+            "football_sessions",
+            {"device_id": f"eq.{device_id}", "ended_at": "is.null"},
+            {"ended_at": now_iso},
+        )
+        _patch(
+            "football_devices",
+            {"id": f"eq.{device_id}", "owner_id": f"eq.{user_id}"},
+            {
+                "owner_id": None,
+                "device_token": None,
+                "device_token_hash": None,
+                "pairing_code_hash": None,
+                "claimed_at": None,
+                "is_active": False,
+            },
+        )
+    except SessionStateUnavailable:
+        logger.exception("Could not release device %s", device_id)
+        return jsonify({"error": "could not release device, please retry"}), 503
+
+    device_session_cache.pop(device_id, None)
+    device_state.pop(device_id, None)
+    logger.info("Device %s released by user %s", device_id, user_id)
+    return jsonify({"message": "Device released"}), 200
 
 
 # ==========================================
@@ -537,7 +821,12 @@ def ingest_reading(device_id, data):
 def receive_data():
     data = request.json or {}
 
-    device = authenticate_device(data)
+    try:
+        device = authenticate_device(data)
+    except SessionStateUnavailable:
+        logger.error("Device lookup unavailable during ingest")
+        return jsonify({"error": "device lookup temporarily unavailable, retry"}), 503
+
     if not device:
         return jsonify({"error": "invalid or missing device credentials"}), 401
 
@@ -570,7 +859,12 @@ def receive_data():
 def receive_data_batch():
     data = request.json or {}
 
-    device = authenticate_device(data)
+    try:
+        device = authenticate_device(data)
+    except SessionStateUnavailable:
+        logger.error("Device lookup unavailable during batch ingest")
+        return jsonify({"error": "device lookup temporarily unavailable, retry"}), 503
+
     if not device:
         return jsonify({"error": "invalid or missing device credentials"}), 401
 
@@ -743,6 +1037,21 @@ def stop_session(user_id):
 # /api/firmware/latest.bin via the ESP32 HTTPUpdate library.
 # ==========================================
 
+def _file_md5(path):
+    """MD5 of a published firmware image. Used for the x-MD5 response header
+    that the ESP32 HTTPUpdate library feeds to the Updater, so a truncated or
+    corrupted download is rejected before it is booted.
+
+    This is an INTEGRITY check, not an authenticity one -- it proves the
+    bytes arrived intact, not that they came from a trusted author. See the
+    README's OTA section."""
+    digest = hashlib.md5()
+    with open(path, "rb") as f:
+        for chunk in iter(lambda: f.read(65536), b""):
+            digest.update(chunk)
+    return digest.hexdigest()
+
+
 @app.route("/api/firmware/version", methods=["GET"])
 def firmware_version():
     import json
@@ -751,6 +1060,11 @@ def firmware_version():
         return jsonify({"version": None, "available": False}), 200
     with open(meta_path) as f:
         meta = json.load(f)
+
+    bin_path = os.path.join(FIRMWARE_DIR, "latest.bin")
+    if os.path.exists(bin_path):
+        meta = {**meta, "md5": _file_md5(bin_path), "size": os.path.getsize(bin_path)}
+
     return jsonify({**meta, "available": True}), 200
 
 
@@ -759,7 +1073,11 @@ def firmware_binary():
     bin_path = os.path.join(FIRMWARE_DIR, "latest.bin")
     if not os.path.exists(bin_path):
         return jsonify({"error": "no firmware published"}), 404
-    return send_from_directory(FIRMWARE_DIR, "latest.bin", mimetype="application/octet-stream")
+
+    resp = send_from_directory(FIRMWARE_DIR, "latest.bin", mimetype="application/octet-stream")
+    # The header name the ESP32 HTTPUpdate library looks for.
+    resp.headers["x-MD5"] = _file_md5(bin_path)
+    return resp
 
 
 # ==========================================

@@ -6,6 +6,7 @@ import { useAuth } from "../lib/AuthContext";
 import PerformanceChart from "../components/dashboard/PerformanceChart";
 import SessionList from "../components/performance/SessionList";
 import { classifyForce } from "../utils/sensorUtils";
+import { fetchPlayerShotStats, fetchRecentShots, mergeShotStats } from "../lib/analyticsQueries";
 
 const DRILL_LIBRARY = {
   low: [
@@ -27,9 +28,11 @@ const DRILL_LIBRARY = {
 
 export default function PlayerAnalytics() {
   const { user, ensureSelfPlayer } = useAuth();
-  const [shots, setShots] = useState([]);
+  const [recentShots, setRecentShots] = useState([]);
+  const [stats, setStats] = useState({ speed: 0, spin: 0, force: 0, distance: 0, shotCount: 0 });
   const [playerIds, setPlayerIds] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState("");
   const [checked, setChecked] = useState(() => {
     try {
       return JSON.parse(localStorage.getItem("practiceChecklist") || "{}");
@@ -57,40 +60,43 @@ export default function PlayerAnalytics() {
         return;
       }
 
-      const { data } = await supabase
-        .from("football_shots")
-        .select("speed, spin, force, distance, shot_type, created_at")
-        .in("player_id", ids)
-        .order("created_at", { ascending: true });
+      // Bests are computed in Postgres over EVERY shot; the chart pulls only
+      // the most recent handful. This page used to download the player's
+      // entire shot history ordered oldest-first and reduce it in the
+      // browser -- so once they passed PostgREST's 1000-row cap, their
+      // "personal best" was silently taken from their oldest thousand kicks
+      // and stopped improving no matter how hard they hit the ball.
+      const [statsResult, recentResult] = await Promise.all([
+        fetchPlayerShotStats(ids),
+        fetchRecentShots(ids),
+      ]);
 
-      setShots(data || []);
+      if (statsResult.error || recentResult.error) {
+        setError("Couldn't load your performance data — check your connection and try again.");
+        setLoading(false);
+        return;
+      }
+
+      setError("");
+      setStats(mergeShotStats(statsResult.data));
+      setRecentShots(recentResult.data);
       setLoading(false);
     };
 
     load();
   }, [user]);
 
-  const bests = useMemo(() => {
-    return shots.reduce(
-      (acc, s) => ({
-        speed: Math.max(acc.speed, s.speed || 0),
-        spin: Math.max(acc.spin, s.spin || 0),
-        force: Math.max(acc.force, s.force || 0),
-        distance: Math.max(acc.distance, s.distance || 0),
-      }),
-      { speed: 0, spin: 0, force: 0, distance: 0 }
-    );
-  }, [shots]);
+  const bests = stats;
 
   const history = useMemo(
     () =>
-      shots.slice(-15).map((s) => ({
+      recentShots.map((s) => ({
         time: new Date(s.created_at).toLocaleTimeString([], { minute: "2-digit", second: "2-digit" }),
         kickForce: s.force,
         ballSpeed: s.speed,
         spinRate: s.spin,
       })),
-    [shots]
+    [recentShots]
   );
 
   const level = classifyForce(bests.force);
@@ -117,7 +123,11 @@ export default function PlayerAnalytics() {
         <p className="text-sm text-muted-foreground">Personal bests, trends, and drills tailored to your data.</p>
       </div>
 
-      {shots.length === 0 ? (
+      {error && (
+        <p className="rounded-lg bg-destructive/10 px-3 py-2 text-center text-sm text-destructive">{error}</p>
+      )}
+
+      {stats.shotCount === 0 ? (
         <div className="rounded-xl border border-dashed border-border p-10 text-center text-muted-foreground">
           No shots recorded yet — head to Session and start recording to see your stats here.
         </div>

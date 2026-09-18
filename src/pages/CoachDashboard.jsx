@@ -9,15 +9,27 @@ import { supabase } from "../lib/supabaseClient";
 import { useAuth } from "../lib/AuthContext";
 import PlayerDetailModal from "../components/players/PlayerDetailModal";
 import ChartErrorBoundary from "../components/ChartErrorBoundary";
+import {
+  fetchPlayerShotStats,
+  fetchPlayerSessionStats,
+  fetchDailyTotals,
+  fetchShotTypeTotals,
+  indexByPlayer,
+  toDailyAverages,
+  TREND_DAYS,
+} from "../lib/analyticsQueries";
 
 const PIE_COLORS = ["hsl(82,100%,64%)", "hsl(217,91%,60%)", "hsl(38,100%,64%)", "hsl(280,70%,65%)", "hsl(0,84%,65%)"];
 
 export default function CoachDashboard() {
   const { user, org } = useAuth();
   const [players, setPlayers] = useState([]);
-  const [sessions, setSessions] = useState([]);
-  const [shots, setShots] = useState([]);
+  const [shotStats, setShotStats] = useState({});
+  const [sessionStats, setSessionStats] = useState({});
+  const [shotTypeData, setShotTypeData] = useState([]);
+  const [trendData, setTrendData] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState("");
   const [name, setName] = useState("");
   const [activePlayerId, setActivePlayerId] = useState(localStorage.getItem("activePlayerId") || null);
   const [detailPlayer, setDetailPlayer] = useState(null);
@@ -31,19 +43,33 @@ export default function CoachDashboard() {
       .order("created_at", { ascending: true });
 
     const ids = (playerRows || []).map((p) => p.id);
+    setPlayers(playerRows || []);
 
-    const [{ data: sessionRows }, { data: shotRows }] = await Promise.all([
-      ids.length
-        ? supabase.from("football_sessions").select("id, player_id, started_at").in("player_id", ids)
-        : Promise.resolve({ data: [] }),
-      ids.length
-        ? supabase.from("football_shots").select("speed, spin, force, player_id, shot_type, created_at").in("player_id", ids)
-        : Promise.resolve({ data: [] }),
+    // Four small aggregate reads instead of downloading every session and
+    // every shot of every player on the roster and grouping them here. Past
+    // PostgREST's 1000-row cap that download stopped being complete, so the
+    // team averages and totals shown were quietly computed from a slice.
+    const [shotStatsResult, sessionStatsResult, dailyResult, shotTypeResult] = await Promise.all([
+      fetchPlayerShotStats(ids),
+      fetchPlayerSessionStats(ids),
+      fetchDailyTotals(ids, { days: TREND_DAYS }),
+      fetchShotTypeTotals(ids),
     ]);
 
-    setPlayers(playerRows || []);
-    setSessions(sessionRows || []);
-    setShots(shotRows || []);
+    const failed = [shotStatsResult, sessionStatsResult, dailyResult, shotTypeResult].find((r) => r.error);
+    if (failed) {
+      console.error("Failed to load coach analytics:", failed.error);
+      setLoadError("Couldn't load team analytics — check your connection and try again.");
+    } else {
+      setLoadError("");
+    }
+
+    setShotStats(indexByPlayer(shotStatsResult.data));
+    setSessionStats(indexByPlayer(sessionStatsResult.data));
+    setTrendData(toDailyAverages(dailyResult.data).slice(-TREND_DAYS));
+    setShotTypeData(
+      (shotTypeResult.data || []).map((r) => ({ name: r.shot_type, value: Number(r.shot_count) || 0 }))
+    );
     setLoading(false);
   };
 
@@ -108,45 +134,20 @@ export default function CoachDashboard() {
 
   const playerName = (id) => players.find((p) => p.id === id)?.name || "Unknown";
 
-  // Roster performance rollup
+  // Roster performance rollup, from the per-player aggregates.
   const roster = useMemo(() => {
-    return players.map((p) => {
-      const playerShots = shots.filter((s) => s.player_id === p.id);
-      return {
-        ...p,
-        totalShots: playerShots.length,
-        bestSpeed: Math.max(0, ...playerShots.map((s) => s.speed || 0)),
-        sessionCount: sessions.filter((s) => s.player_id === p.id).length,
-      };
-    });
-  }, [players, shots, sessions]);
+    return players.map((p) => ({
+      ...p,
+      totalShots: Number(shotStats[p.id]?.shot_count) || 0,
+      bestSpeed: Number(shotStats[p.id]?.best_speed) || 0,
+      sessionCount: Number(sessionStats[p.id]?.session_count) || 0,
+    }));
+  }, [players, shotStats, sessionStats]);
 
   // Pie: session attendance per player
   const attendanceData = roster
     .filter((p) => p.sessionCount > 0)
     .map((p) => ({ name: p.name, value: p.sessionCount }));
-
-  // Pie: shot-type distribution across the roster
-  const shotTypeData = useMemo(() => {
-    const counts = {};
-    for (const s of shots) counts[s.shot_type || "kick"] = (counts[s.shot_type || "kick"] || 0) + 1;
-    return Object.entries(counts).map(([name, value]) => ({ name, value }));
-  }, [shots]);
-
-  // Trend: team-wide average speed & spin per day
-  const trendData = useMemo(() => {
-    const byDay = {};
-    for (const s of shots) {
-      const day = new Date(s.created_at).toLocaleDateString();
-      byDay[day] ||= { day, speedTotal: 0, spinTotal: 0, count: 0 };
-      byDay[day].speedTotal += s.speed || 0;
-      byDay[day].spinTotal += s.spin || 0;
-      byDay[day].count += 1;
-    }
-    return Object.values(byDay)
-      .map((d) => ({ day: d.day, avgSpeed: +(d.speedTotal / d.count).toFixed(1), avgSpin: +(d.spinTotal / d.count).toFixed(1) }))
-      .slice(-14);
-  }, [shots]);
 
   if (loading) {
     return (
@@ -162,6 +163,10 @@ export default function CoachDashboard() {
         <h1 className="font-display text-2xl font-semibold">Coach Dashboard</h1>
         <p className="text-sm text-muted-foreground">Your roster, and how the whole team is trending.</p>
       </div>
+
+      {loadError && (
+        <p className="rounded-lg bg-destructive/10 px-3 py-2 text-center text-sm text-destructive">{loadError}</p>
+      )}
 
       {/* ROSTER */}
       <div className="rounded-2xl border border-border bg-card p-6">

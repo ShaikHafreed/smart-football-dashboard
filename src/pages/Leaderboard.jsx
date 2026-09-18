@@ -1,65 +1,87 @@
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { motion } from "framer-motion";
 import { Loader2, Trophy, Search } from "lucide-react";
 import { supabase } from "../lib/supabaseClient";
+import { fetchLeaderboard, LEADERBOARD_LIMIT } from "../lib/analyticsQueries";
 
 const MEDAL = ["🥇", "🥈", "🥉"];
 const PAGE_SIZE = 20;
+// A burst of kicks used to mean a full re-aggregation per kick.
+const REALTIME_COALESCE_MS = 2000;
 
 export default function Leaderboard() {
   const [rows, setRows] = useState([]);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState("");
   const [visibleCount, setVisibleCount] = useState(PAGE_SIZE);
+  const [hasAnyShots, setHasAnyShots] = useState(false);
+  const [capped, setCapped] = useState(false);
+  const [error, setError] = useState("");
 
-  const load = async () => {
-    const { data } = await supabase
-      .from("football_shots")
-      .select("speed, force, football_players(id, name)");
+  // Read by the realtime handler so a refresh uses the current search
+  // without re-subscribing the channel on every keystroke.
+  const searchRef = useRef("");
+  useEffect(() => {
+    searchRef.current = search;
+  }, [search]);
 
-    const byPlayer = new Map();
+  // Ranking and aggregation now happen in Postgres (football_leaderboard).
+  // This used to select every shot row in the table and group them in the
+  // browser -- which past PostgREST's 1000-row cap silently ranked players on
+  // a slice of their shots rather than all of them.
+  const load = useCallback(async (term = "") => {
+    const { data, error: loadError, capped: hitLimit } = await fetchLeaderboard({ search: term });
 
-    for (const shot of data || []) {
-      const player = shot.football_players;
-      if (!player) continue;
-
-      const entry = byPlayer.get(player.id) || {
-        player: player.name,
-        bestScore: 0,
-        totalShots: 0,
-      };
-
-      entry.totalShots += 1;
-      entry.bestScore = Math.max(entry.bestScore, (shot.speed || 0) + (shot.force || 0));
-
-      byPlayer.set(player.id, entry);
+    if (loadError) {
+      setError("Couldn't load the leaderboard — check your connection and try again.");
+      setLoading(false);
+      return;
     }
 
-    setRows([...byPlayer.values()].sort((a, b) => b.bestScore - a.bestScore));
-    setLoading(false);
-  };
+    const mapped = (data || []).map((r) => ({
+      player: r.player_name,
+      bestScore: Number(r.best_score) || 0,
+      totalShots: Number(r.total_shots) || 0,
+    }));
 
-  useEffect(() => {
-    load();
+    setError("");
+    setRows(mapped);
+    setCapped(hitLimit);
+    if (!term.trim()) setHasAnyShots(mapped.length > 0);
+    else if (mapped.length) setHasAnyShots(true);
+    setLoading(false);
   }, []);
 
-  // Every new shot potentially reshuffles the ranking, so re-aggregate on
-  // any insert rather than trying to patch one row's score in place.
+  // Search is a database match, so it covers every player -- not just the
+  // ones already on screen.
   useEffect(() => {
+    const timer = setTimeout(() => load(search), 300);
+    return () => clearTimeout(timer);
+  }, [search, load]);
+
+  useEffect(() => {
+    let pending = null;
+
     const channel = supabase
       .channel("leaderboard-live")
-      .on("postgres_changes", { event: "INSERT", schema: "public", table: "football_shots" }, load)
+      .on("postgres_changes", { event: "INSERT", schema: "public", table: "football_shots" }, () => {
+        // A new shot can reshuffle the ranking, but a rally of kicks should
+        // cost one refresh, not one per kick.
+        if (pending) return;
+        pending = setTimeout(() => {
+          pending = null;
+          load(searchRef.current);
+        }, REALTIME_COALESCE_MS);
+      })
       .subscribe();
 
-    return () => supabase.removeChannel(channel);
-  }, []);
+    return () => {
+      if (pending) clearTimeout(pending);
+      supabase.removeChannel(channel);
+    };
+  }, [load]);
 
-  const filtered = useMemo(() => {
-    if (!search.trim()) return rows;
-    const q = search.trim().toLowerCase();
-    return rows.filter((r) => r.player.toLowerCase().includes(q));
-  }, [rows, search]);
-
+  const filtered = rows; // filtering happens in the query now
   const visible = filtered.slice(0, visibleCount);
   const topScore = rows[0]?.bestScore || 1;
 
@@ -82,20 +104,30 @@ export default function Leaderboard() {
         </div>
       )}
 
+      {error && (
+        <p className="rounded-lg bg-destructive/10 px-3 py-2 text-center text-sm text-destructive">{error}</p>
+      )}
+
+      {capped && (
+        <p className="text-xs text-muted-foreground">
+          Showing the top {LEADERBOARD_LIMIT} players by best score.
+        </p>
+      )}
+
       {loading && (
         <div className="flex items-center gap-2 p-10 text-muted-foreground">
           <Loader2 className="h-4 w-4 animate-spin" /> Loading…
         </div>
       )}
 
-      {!loading && rows.length === 0 && (
+      {!loading && !hasAnyShots && (
         <div className="flex flex-col items-center gap-2 rounded-xl border border-dashed border-border p-10 text-center text-muted-foreground">
           <Trophy className="h-6 w-6" />
           No shots recorded yet — run a Session with a player selected.
         </div>
       )}
 
-      {!loading && rows.length > 0 && filtered.length === 0 && (
+      {!loading && hasAnyShots && filtered.length === 0 && (
         <div className="flex flex-col items-center gap-2 rounded-xl border border-dashed border-border p-10 text-center text-muted-foreground">
           <Search className="h-6 w-6" />
           No player matches "{search}".

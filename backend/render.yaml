@@ -11,3 +11,12 @@ services:
         sync: false
       - key: SUPABASE_SERVICE_ROLE_KEY
         sync: false
+      # Render terminates TLS at its edge and forwards the real client in
+      # X-Forwarded-For / X-Forwarded-Proto. Saying so here is what lets the
+      # app rate-limit per device instead of per proxy, and reject a request
+      # that reached the edge over plain HTTP. Not a secret, so it is set
+      # here rather than in the dashboard -- and deliberately NOT the default
+      # in code, because trusting these headers when nothing is in front of
+      # the app would let any caller forge them.
+      - key: TRUST_PROXY_HEADERS
+        value: "1"

@@ -16,7 +16,29 @@ export const FLASK_URL = import.meta.env.VITE_FLASK_URL || "http://127.0.0.1:500
  * the request carries whatever token is currently valid instead of one
  * that may have expired since the user's last render.
  */
+/**
+ * Fails loudly on a backend URL that would send a Supabase access token over
+ * plain HTTP from an HTTPS page. The browser blocks that as mixed content
+ * anyway, but the default FLASK_URL is a localhost http:// address -- so a
+ * deployment that forgets VITE_FLASK_URL would otherwise look like a
+ * mysterious network error on every device and session action, rather than
+ * the configuration mistake it is.
+ */
+function assertSecureBackendUrl() {
+  if (typeof window === "undefined") return;
+  if (window.location.protocol !== "https:") return;
+  if (FLASK_URL.startsWith("https://")) return;
+
+  throw new Error(
+    "This site is configured without a backend URL (VITE_FLASK_URL), so device " +
+    "and session actions can't reach the relay. An access token must never be " +
+    "sent over plain HTTP."
+  );
+}
+
 export async function authedFetch(path, options = {}) {
+  assertSecureBackendUrl();
+
   const { data: { session } } = await supabase.auth.getSession();
   if (!session?.access_token) {
     throw new Error("Not logged in");
