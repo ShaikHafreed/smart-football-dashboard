@@ -144,7 +144,7 @@ The Flask server listens on `http://127.0.0.1:5000` locally and expects the ESP3
 Render's free tier sleeps after 15 minutes idle and takes 30–50s to wake on the first request after that — the firmware's request timeout is set generously to accommodate this.
 
 ### Hardware (ESP32)
-Flash `firmware/smart_football/smart_football.ino` from the Arduino IDE. Update `ssid`, `password`, and `serverHost` (the deployed Render hostname — see above) at the top of the file, and confirm these pins match your actual wiring:
+Flash `firmware/smart_football/smart_football.ino` from the Arduino IDE. First copy `firmware/smart_football/secrets.example.h` to `secrets.h` in the same folder and fill in your Wi-Fi networks — `secrets.h` is gitignored, so credentials never reach the repository (the sketch won't compile without it). Update `serverHost` (the deployed Render hostname — see above) at the top of the sketch, and confirm these pins match your actual wiring:
 
 | Pin | Purpose |
 |---|---|
