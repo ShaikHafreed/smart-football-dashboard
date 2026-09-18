@@ -9,6 +9,7 @@ import FootballAnimation from "../components/dashboard/FootballAnimation";
 import StatsSummaryBar from "../components/dashboard/StatsSummaryBar";
 import PageHeader from "../components/common/PageHeader";
 import StateBlock from "../components/common/StateBlock";
+import MeasurementLegend from "../components/common/MeasurementLegend";
 import { supabase } from "../lib/supabaseClient";
 
 export default function Dashboard() {
@@ -182,6 +183,8 @@ export default function Dashboard() {
 
         <ConnectionPanel status={connectionStatus} onReconnect={() => window.location.reload()} />
       </div>
+
+      <MeasurementLegend />
 
       {/* SESSION SUMMARY */}
       <div className="hairline-grid grid-cols-2">

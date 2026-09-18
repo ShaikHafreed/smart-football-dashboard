@@ -67,6 +67,31 @@
 #define IMPACT_MIN_SAMPLES       10        // below this the window is not trusted
 
 // ==========================================
+// CALIBRATION LOGGING
+//
+// Machine-readable serial output for the calibration experiments in
+// docs/CALIBRATION.md. Every line is one CSV record prefixed with CAL_, so
+// tools/calibration/capture.py can pick them out of an ordinary serial log
+// without the board needing to know anything about the analysis.
+//
+// Leave this on: the lines are short, they only appear on a real event, and
+// a ball that has been calibrated still benefits from being re-checkable.
+// ==========================================
+
+#define CALIBRATION_LOGGING      1
+
+// Rest check at boot: with the ball sitting still, total acceleration must
+// read 1 g. Anything else means the scaling or the mount is wrong, and no
+// later measurement can be trusted until it is fixed.
+#define REST_CHECK_MS            1000
+
+// Spin monitor: while the ball is rotating faster than this, print the rate
+// periodically so it can be compared against a turntable of known speed. A
+// stationary ball stays silent.
+#define SPIN_LOG_MIN_RPM         20.0f
+#define SPIN_LOG_INTERVAL_MS     250
+
+// ==========================================
 // CALIBRATION - NOT YET MEASURED
 //
 // Set to 1 only after running the experiments documented at the bottom of
