@@ -37,18 +37,22 @@ const SECTIONS = [
   { href: "#technology", label: "Technology" },
 ];
 
+// Only what the sensor can defend. Spin and impact are physical units read
+// straight off the gyroscope and accelerometer; speed and carry stay indices
+// until the calibration experiment in firmware/smart_football/calibration.h
+// has actually been run.
 const MEASUREMENTS = [
-  { icon: Gauge, label: "Speed", hint: "how quickly the ball leaves the boot" },
-  { icon: RotateCw, label: "Spin", hint: "rotation imparted at contact" },
-  { icon: Zap, label: "Force", hint: "strength of the strike" },
-  { icon: Ruler, label: "Distance", hint: "how far the strike carries" },
+  { icon: RotateCw, label: "Spin", hint: "rotation rate at contact, in rpm" },
+  { icon: Zap, label: "Impact", hint: "peak acceleration through the strike, in g" },
+  { icon: Gauge, label: "Speed index", hint: "how hard the ball was struck, on a full-scale index" },
+  { icon: Ruler, label: "Carry index", hint: "derived from the speed index, not measured separately" },
 ];
 
 const STEPS = [
   {
     icon: Cpu,
     title: "The ball senses the strike",
-    body: "An ESP32 with a motion sensor sits inside the football. A vibration trigger marks the instant of contact, so a kick is measured when it happens — not sampled continuously.",
+    body: "An ESP32 with a motion sensor sits inside the football. A vibration trigger marks the instant of contact, and the sensor is sampled across a short window around it, so the peak of the strike is captured rather than missed.",
   },
   {
     icon: Wifi,
@@ -68,7 +72,7 @@ const STEPS = [
 ];
 
 const PLAYER_FEATURES = [
-  { icon: RadioTower, title: "Live telemetry", body: "Speed, spin, force and distance from the last strike, updating as you play." },
+  { icon: RadioTower, title: "Live telemetry", body: "Spin, impact and strike index from the last kick, updating as you play." },
   { icon: Trophy, title: "Personal bests", body: "Your best figures across every kick you have ever recorded, not just this session." },
   { icon: LineChart, title: "Session breakdown", body: "Each session scored for its Best Kick and Max Speed Kick, with the spin at both of those moments." },
   { icon: ListChecks, title: "Practice suggestions", body: "Drills matched to your own force profile, as a checklist you can work through." },
@@ -84,7 +88,7 @@ const COACH_FEATURES = [
 ];
 
 const TECHNOLOGY = [
-  { term: "Hardware", detail: "ESP32 microcontroller with an MPU6050 accelerometer and gyroscope, plus a vibration trigger for kick detection." },
+  { term: "Hardware", detail: "ESP32 microcontroller with an MPU6050 accelerometer and gyroscope run at their widest ranges (±16 g, ±2000 °/s), plus a vibration trigger for kick detection." },
   { term: "On-device", detail: "Credentials held in flash, offline buffering when the network drops, and over-the-air firmware updates." },
   { term: "Transport", detail: "HTTPS with certificate validation against pinned roots, and per-device credentials the ball proves on every request." },
   { term: "Backend", detail: "A Python relay that authenticates each device, resolves the active session, and writes the kick." },
@@ -150,10 +154,10 @@ function SmartBall({ reduceMotion }) {
 /** Illustrative dashboard readout, mirroring the cards the app shows live. */
 function ReadoutCard() {
   const rows = [
-    { icon: Gauge, label: "Speed", value: "68", unit: "km/h" },
-    { icon: RotateCw, label: "Spin", value: "940", unit: "rpm" },
-    { icon: Zap, label: "Force", value: "412", unit: "N" },
-    { icon: Ruler, label: "Distance", value: "31", unit: "m" },
+    { icon: RotateCw, label: "Spin", value: "182", unit: "rpm" },
+    { icon: Zap, label: "Impact", value: "11.4", unit: "g" },
+    { icon: Gauge, label: "Speed index", value: "62", unit: "" },
+    { icon: Ruler, label: "Carry index", value: "155", unit: "" },
   ];
 
   return (
@@ -463,7 +467,7 @@ export default function Landing() {
                   id="players-title"
                   eyebrow="For players"
                   title="Know whether you are actually improving"
-                  lead="Not a feeling at the end of a session — the same four measurements, taken the same way, every time you train."
+                  lead="Not a feeling at the end of a session — the same measurements, taken the same way, every time you train."
                 />
               </Reveal>
             </div>

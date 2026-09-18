@@ -128,7 +128,7 @@ export default function SessionList({ playerIds, playerNames }) {
                           <div className="rounded-lg bg-secondary/30 p-3">
                             <Gauge className="h-3.5 w-3.5 text-primary" />
                             <p className="font-data mt-1.5 text-lg font-semibold">{summary.maxSpeedKick?.speed ?? "-"}</p>
-                            <p className="text-[11px] text-muted-foreground">Max Speed (km/h)</p>
+                            <p className="text-[11px] text-muted-foreground">Max speed index</p>
                           </div>
                           <div className="rounded-lg bg-secondary/30 p-3">
                             <RotateCw className="h-3.5 w-3.5 text-blue-400" />
@@ -145,7 +145,7 @@ export default function SessionList({ playerIds, playerNames }) {
                         <div className="mt-3 space-y-1">
                           {shots.map((s, i) => (
                             <div key={i} className="flex justify-between rounded-lg bg-secondary/20 px-3 py-1.5 text-xs text-muted-foreground">
-                              <span>{s.speed} km/h · {s.spin} rpm · {s.force} N · {s.distance} m</span>
+                              <span>{s.spin} rpm · {s.force} g · idx {s.speed}</span>
                               <span>{new Date(s.created_at).toLocaleTimeString()}</span>
                             </div>
                           ))}

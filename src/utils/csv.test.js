@@ -4,7 +4,7 @@ import { toCsv } from "./csv";
 describe("toCsv", () => {
   it("includes the header row", () => {
     const csv = toCsv([]);
-    expect(csv).toBe("Player,Speed (km/h),Spin (rpm),Force (N),Distance (m),Shot Type,Recorded At");
+    expect(csv).toBe("Player,Speed index,Spin (rpm),Impact (g),Carry index (derived),Shot Type,Recorded At");
   });
 
   it("formats a row with a known player", () => {
@@ -19,6 +19,16 @@ describe("toCsv", () => {
     expect(lines[1]).toContain('"Ali Hassan"');
     expect(lines[1]).toContain('"24.5"');
     expect(lines[1]).toContain('"2026-08-06T10:00:00.000Z"');
+  });
+
+  it("never labels an uncalibrated index as a physical unit", () => {
+    // The firmware reports speed and carry as full-scale indices (see
+    // firmware/smart_football/calibration.h); only spin and impact carry
+    // units the sensor can justify.
+    const header = toCsv([]).split("\n")[0];
+    expect(header).not.toMatch(/km\/h/);
+    expect(header).not.toMatch(/\(N\)/);
+    expect(header).not.toMatch(/Distance \(m\)/);
   });
 
   it("falls back to Unknown when the player join is missing", () => {

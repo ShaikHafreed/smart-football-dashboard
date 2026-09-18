@@ -2,7 +2,10 @@
  * testable on its own, independent of the DOM download mechanics. */
 
 export function toCsv(rows) {
-  const header = ["Player", "Speed (km/h)", "Spin (rpm)", "Force (N)", "Distance (m)", "Shot Type", "Recorded At"];
+  // Column names state what each field actually is. Speed and carry are
+// full-scale indices; only spin (rpm) and impact (g) are physical units,
+// and carry is derived from the speed index rather than measured.
+  const header = ["Player", "Speed index", "Spin (rpm)", "Impact (g)", "Carry index (derived)", "Shot Type", "Recorded At"];
   const lines = rows.map((r) => [
     r.football_players?.name || "Unknown",
     r.speed,

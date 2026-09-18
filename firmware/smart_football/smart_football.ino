@@ -12,6 +12,11 @@
 // against the live host -- see the file header.
 #include "certs.h"
 
+// Sensor ranges, datasheet scaling, and the (as yet unmeasured)
+// calibration coefficients. Every number that turns a raw count into
+// something reportable lives there, not here.
+#include "calibration.h"
+
 MPU6050 mpu;
 Preferences prefs;
 
@@ -58,6 +63,83 @@ bool timeSynced = false;
 #define BATTERY_ADC_PIN 34
 
 int16_t ax, ay, az, gx, gy, gz;
+
+// ==========================================
+// MEASUREMENT
+//
+// What the sensor can honestly report, and what it cannot:
+//
+//   spin   -> a real physical rate. The gyroscope measures angular
+//             velocity; counts to deg/s is the datasheet sensitivity and
+//             deg/s to rpm is /6. No calibration required.
+//   impact -> real peak acceleration in g, by the same datasheet scaling.
+//             NOT newtons: that needs the ball's mass and proof the sensor
+//             tracks its centre of mass (see calibration.h).
+//   speed  -> an accelerometer does not measure speed. Reported as a
+//             full-scale index until the reference experiment in
+//             calibration.h has been run.
+//   carry  -> not measurable with this hardware at all. The value sent is
+//             derived from the speed index purely to keep the existing API
+//             field and stored history continuous, and the app labels it
+//             as derived.
+// ==========================================
+
+struct ImpactMeasurement {
+  float peakG;          // peak |acceleration| over the window, in g
+  float peakRpm;        // peak |angular rate| over the window, in rpm
+  float speedIndex;     // 0-100, full-scale normalised. NOT km/h.
+  float derivedCarry;   // speed index * DERIVED_CARRY_FACTOR. No new information.
+  bool accelSaturated;  // true peak is only a lower bound
+  bool gyroSaturated;
+  int samples;
+};
+
+bool axisSaturated(int16_t v) {
+  return v > AXIS_SATURATION_COUNTS || v < -AXIS_SATURATION_COUNTS;
+}
+
+// Samples as fast as the I2C bus allows for IMPACT_WINDOW_MS and keeps the
+// peaks. Contact lasts a few milliseconds; a single reading taken whenever
+// the main loop happened to arrive almost never contained it.
+ImpactMeasurement captureImpact() {
+  ImpactMeasurement m = {0, 0, 0, 0, false, false, 0};
+
+  long peakAccelCounts = 0;
+  long peakGyroCounts = 0;
+  unsigned long start = millis();
+
+  while (millis() - start < IMPACT_WINDOW_MS) {
+    mpu.getMotion6(&ax, &ay, &az, &gx, &gy, &gz);
+    m.samples++;
+
+    if (axisSaturated(ax) || axisSaturated(ay) || axisSaturated(az)) m.accelSaturated = true;
+    if (axisSaturated(gx) || axisSaturated(gy) || axisSaturated(gz)) m.gyroSaturated = true;
+
+    // Magnitude of the whole vector: a kick does not arrive along a
+    // convenient axis, and the old code read one axis for "speed" and a
+    // different one for "force" as though they were separate quantities.
+    long a2 = (long)ax * ax + (long)ay * ay + (long)az * az;
+    long g2 = (long)gx * gx + (long)gy * gy + (long)gz * gz;
+    if (a2 > peakAccelCounts) peakAccelCounts = a2;
+    if (g2 > peakGyroCounts) peakGyroCounts = g2;
+  }
+
+  m.peakG = sqrt((double)peakAccelCounts) / ACCEL_LSB_PER_G;
+  m.peakRpm = (sqrt((double)peakGyroCounts) / GYRO_LSB_PER_DPS) / 6.0f;
+
+  // An index, explicitly: how hard the strike was as a fraction of what
+  // the sensor can express. It becomes a speed only when the experiment in
+  // calibration.h has been run.
+  m.speedIndex = (m.peakG / ACCEL_RANGE_G) * SPEED_INDEX_FULL_SCALE;
+  if (m.speedIndex > SPEED_INDEX_FULL_SCALE) m.speedIndex = SPEED_INDEX_FULL_SCALE;
+
+#if SPEED_CALIBRATED
+  m.speedIndex = SPEED_MODEL_GAIN * m.peakG + SPEED_MODEL_OFFSET;   // km/h
+#endif
+
+  m.derivedCarry = m.speedIndex * DERIVED_CARRY_FACTOR;
+  return m;
+}
 
 // ==========================================
 // DEVICE IDENTITY (persisted across reboots in NVS)
@@ -431,7 +513,16 @@ void setup() {
   secureClient.setCACert(BACKEND_ROOT_CA_BUNDLE);
 
   Wire.begin();
+  Wire.setClock(400000);   // fast-mode I2C, so the impact window gets samples
   mpu.initialize();
+
+  // Without these the part stays at its +/-2 g and +/-250 deg/s defaults,
+  // and every real kick saturates both: the reading was the same number
+  // for a tap and for a full strike. These are the widest ranges the
+  // MPU6050 offers.
+  mpu.setFullScaleAccelRange(MPU6050_ACCEL_FS_16);
+  mpu.setFullScaleGyroRange(MPU6050_GYRO_FS_2000);
+
   if (!mpu.testConnection()) {
     Serial.println("MPU6050 init FAILED.");
   }
@@ -483,18 +574,26 @@ void loop() {
     checkForFirmwareUpdate();
   }
 
-  int vibration = digitalRead(VIB_PIN);
+  if (digitalRead(VIB_PIN) == HIGH) {
+    ImpactMeasurement impact = captureImpact();
 
-  mpu.getMotion6(&ax, &ay, &az, &gx, &gy, &gz);
+    if (impact.samples >= IMPACT_MIN_SAMPLES) {
+      if (impact.accelSaturated) {
+        Serial.println("Impact exceeded +/-16 g - peak is a lower bound.");
+      }
+      if (impact.gyroSaturated) {
+        Serial.println("Spin exceeded +/-2000 deg/s - rate is a lower bound.");
+      }
 
-  float speed = abs(ax) / 500.0;
-  float spin = abs(gz) / 100.0;
-  float force = abs(ay) / 500.0;
-  float distance = speed * 2.5;
-
-  if (vibration == HIGH) {
-    sendReading(speed, spin, force, distance);
+      // Field order is unchanged (speed, spin, force, distance) so the
+      // backend, database and history stay compatible. What each field
+      // now carries is documented above captureImpact() and mirrored by
+      // the labels in the app.
+      sendReading(impact.speedIndex, impact.peakRpm, impact.peakG, impact.derivedCarry);
+    } else {
+      Serial.printf("Impact window too short (%d samples) - discarded.\n", impact.samples);
+    }
   }
 
-  delay(300);
+  delay(50);
 }

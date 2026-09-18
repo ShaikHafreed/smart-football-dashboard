@@ -171,10 +171,13 @@ export default function Dashboard() {
       {/* MEASUREMENTS — one instrument panel, not four floating cards */}
       <div className="grid gap-4 lg:grid-cols-4 lg:items-start">
         <div className="hairline-grid grid-cols-2 lg:col-span-3">
-          <SensorCard icon={<Gauge className="h-5 w-5" />} label="Speed" value={data.speed} unit="km/h" accentClass="text-foreground" live={data.connected} />
+          {/* Units follow what the sensor can actually justify — see
+              firmware/smart_football/calibration.h. Speed and carry are
+              indices, not km/h and metres. */}
+          <SensorCard icon={<Gauge className="h-5 w-5" />} label="Speed index" value={data.speed} unit="" accentClass="text-foreground" live={data.connected} />
           <SensorCard icon={<RotateCw className="h-5 w-5" />} label="Spin" value={data.spin} unit="rpm" accentClass="text-foreground" live={data.connected} />
-          <SensorCard icon={<Zap className="h-5 w-5" />} label="Force" value={data.force} unit="N" accentClass="text-foreground" live={data.connected} />
-          <SensorCard icon={<Ruler className="h-5 w-5" />} label="Distance" value={data.distance} unit="m" accentClass="text-foreground" live={data.connected} />
+          <SensorCard icon={<Zap className="h-5 w-5" />} label="Impact" value={data.force} unit="g" accentClass="text-foreground" live={data.connected} />
+          <SensorCard icon={<Ruler className="h-5 w-5" />} label="Carry index" value={data.distance} unit="" accentClass="text-foreground" live={data.connected} />
         </div>
 
         <ConnectionPanel status={connectionStatus} onReconnect={() => window.location.reload()} />

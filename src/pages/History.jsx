@@ -172,10 +172,10 @@ export default function History() {
             <span className="min-w-0 truncate font-medium">{item.football_players?.name || "Unknown"}</span>
 
             <div className="flex flex-wrap gap-x-4 gap-y-1 font-data text-sm tabular-nums text-muted-foreground">
-              <span><span className="text-foreground">{item.speed}</span> km/h</span>
               <span><span className="text-foreground">{item.spin}</span> rpm</span>
-              <span><span className="text-foreground">{item.force}</span> N</span>
-              <span><span className="text-foreground">{item.distance}</span> m</span>
+              <span><span className="text-foreground">{item.force}</span> g</span>
+              <span>idx <span className="text-foreground">{item.speed}</span></span>
+              <span>carry <span className="text-foreground">{item.distance}</span></span>
             </div>
 
             <span className="text-xs text-muted-foreground">
