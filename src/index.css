@@ -89,6 +89,96 @@ h1, h2, h3, h4, .font-display {
 }
 
 /* ============================================
+   Public landing scope — "match day".
+
+   The authenticated app is a night pitch: dark, floodlit, built for
+   reading live numbers at a glance. The public page is the same brand in
+   daylight — paper-white, deep pitch green ink, the electric lime kept as
+   a spark rather than a surface.
+
+   It works by re-declaring the SAME token names inside .landing, so every
+   existing utility (bg-card, text-muted-foreground, border-border) keeps
+   working and simply resolves light here. Nothing outside .landing
+   changes, so the app is untouched.
+   ============================================ */
+.landing {
+  --paper: 40 24% 98%;
+  --ink: 158 32% 9%;
+  --lime: 82 92% 44%;
+
+  --background: var(--paper);
+  --foreground: var(--ink);
+  --card: 0 0% 100%;
+  --card-foreground: var(--ink);
+  --surface-2: 150 16% 96%;
+  --border: 155 12% 87%;
+  --muted: 150 14% 96%;
+  --muted-foreground: 158 10% 36%;
+  --secondary: 150 16% 95%;
+  --secondary-foreground: var(--ink);
+  /* Lime is unreadable as text on paper; the pitch green carries the
+     brand at this weight and passes contrast comfortably. */
+  --primary: 154 52% 17%;
+  --primary-foreground: 0 0% 100%;
+
+  background: hsl(var(--paper));
+  color: hsl(var(--ink));
+}
+
+/* One dark band mid-page, so the landing visibly resolves into the app
+   the visitor is about to enter rather than looking like a different
+   product. Same tokens, night values. */
+.landing-pitch {
+  --background: 160 24% 6%;
+  --foreground: 140 20% 95%;
+  --card: 160 20% 9%;
+  --card-foreground: 140 20% 95%;
+  --border: 155 16% 20%;
+  --muted-foreground: 155 10% 65%;
+  --secondary: 160 16% 15%;
+  --primary: 82 100% 64%;
+  --primary-foreground: 160 30% 8%;
+
+  background: hsl(160 24% 6%);
+  color: hsl(140 20% 95%);
+}
+
+.landing ::selection {
+  background: hsl(var(--lime) / 0.35);
+}
+
+.landing :focus-visible {
+  outline: 2px solid hsl(var(--lime));
+  outline-offset: 3px;
+  border-radius: 6px;
+}
+
+/* A hand-drawn-looking rule under a word, the way a coach underlines a
+   name on a team sheet. */
+.landing-underline {
+  background-image: linear-gradient(hsl(var(--lime) / 0.55), hsl(var(--lime) / 0.55));
+  background-repeat: no-repeat;
+  background-position: 0 88%;
+  background-size: 100% 0.32em;
+}
+
+/* Motion is decoration here: if the visitor asked for less, they get
+   none. */
+@media (prefers-reduced-motion: reduce) {
+  .landing {
+    scroll-behavior: auto;
+  }
+  .landing *,
+  .landing *::before,
+  .landing *::after {
+    animation-duration: 0.001ms !important;
+    animation-delay: 0ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.001ms !important;
+  }
+}
+
+/* ============================================
    Motion
    ============================================ */
 @keyframes fadeIn {
