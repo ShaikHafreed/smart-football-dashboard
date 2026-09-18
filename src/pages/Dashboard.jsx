@@ -21,6 +21,7 @@ export default function Dashboard() {
     distance: 0,
     shot: "No Shot",
     connected: false,
+    lastReadingAt: null,
   });
 
   const [kickCount, setKickCount] = useState(0);
@@ -67,6 +68,9 @@ export default function Dashboard() {
         distance: row.last_distance ?? 0,
         shot: stale ? "Disconnected" : (row.last_shot || "Kick Not Detected"),
         connected: !stale,
+        // Already on the row; the panel below turns it into "how current is
+        // this reading" rather than only "connected or not".
+        lastReadingAt: row.last_reading_at ?? null,
       };
 
       setData(result);
@@ -181,7 +185,11 @@ export default function Dashboard() {
           <SensorCard icon={<Ruler className="h-5 w-5" />} label="Carry index" value={data.distance} unit="" accentClass="text-foreground" live={data.connected} />
         </div>
 
-        <ConnectionPanel status={connectionStatus} onReconnect={() => window.location.reload()} />
+        <ConnectionPanel
+          status={connectionStatus}
+          lastReadingAt={data.lastReadingAt}
+          onReconnect={() => window.location.reload()}
+        />
       </div>
 
       <MeasurementLegend />

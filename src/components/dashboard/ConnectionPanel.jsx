@@ -24,7 +24,19 @@ const STATUS = {
   },
 };
 
-export default function ConnectionPanel({ status = "disconnected", onReconnect }) {
+/** How long ago, in the coarse terms that are actually useful here. */
+function freshness(iso) {
+  if (!iso) return null;
+  const seconds = Math.floor((Date.now() - new Date(iso).getTime()) / 1000);
+  if (seconds < 0) return "just now";
+  if (seconds < 60) return `${seconds}s ago`;
+  if (seconds < 3600) return `${Math.floor(seconds / 60)}m ago`;
+  if (seconds < 86400) return `${Math.floor(seconds / 3600)}h ago`;
+  return `${Math.floor(seconds / 86400)}d ago`;
+}
+
+export default function ConnectionPanel({ status = "disconnected", lastReadingAt, onReconnect }) {
+  const since = freshness(lastReadingAt);
   const cfg = STATUS[status] || STATUS.disconnected;
   const isConnected = status === "connected";
 
@@ -47,6 +59,15 @@ export default function ConnectionPanel({ status = "disconnected", onReconnect }
       </div>
 
       <p className="mt-3 text-xs leading-relaxed text-muted-foreground">{cfg.detail}</p>
+
+      {/* Stale numbers on screen are worse than no numbers, so say plainly
+          how old the one being shown is. */}
+      <p className="mt-3 flex items-center justify-between gap-2 border-t border-border pt-3 text-xs">
+        <span className="text-muted-foreground">Last reading</span>
+        <span className={`font-data tabular-nums ${isConnected ? "text-foreground" : "text-muted-foreground"}`}>
+          {since || "none yet"}
+        </span>
+      </p>
 
       {!isConnected && (
         <button onClick={onReconnect} className="btn btn-quiet btn-sm mt-4 w-full">
