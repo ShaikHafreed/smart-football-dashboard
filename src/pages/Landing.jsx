@@ -116,10 +116,27 @@ function BrandMark({ className = "" }) {
   );
 }
 
-/** Hero illustration: the ball, the sensor inside it, and the strike leaving it. */
+/**
+ * Hero illustration: the ball, the sensor inside it, and the strike leaving
+ * it — annotated the way a piece of measuring equipment is annotated.
+ *
+ * The annotations are the point. A football with a glow around it says
+ * nothing; a football with a leader line to "MPU6050 · ±16 g / ±2000 °/s"
+ * says what this product actually is, before anyone reads a paragraph. Every
+ * label states a capability the hardware genuinely has — the ranges are the
+ * ones the firmware configures — and no label is a reading, so nothing here
+ * can be mistaken for live telemetry.
+ *
+ * They arrive in sequence (ball, impact, signal, data) so the composition
+ * explains the chain rather than presenting it all at once. Under reduced
+ * motion every label is simply present from the first frame.
+ */
 function SmartBall({ reduceMotion }) {
+  const step = (i) => (reduceMotion ? undefined : { animationDelay: `${0.25 + i * 0.28}s` });
+  const annotate = reduceMotion ? "" : "animate-annotate";
+
   return (
-    <svg viewBox="0 0 420 380" role="img" aria-label="A football with a motion sensor inside it, sending a reading as it is struck" className="h-full w-full">
+    <svg viewBox="0 0 460 380" role="img" aria-label="A football with a motion sensor inside it: the sensor is labelled as an MPU6050 accelerometer and gyroscope, the moment of contact is labelled impact, and the strike leaving the ball is labelled signal, carrying the reading to the dashboard" className="h-full w-full">
       <defs>
         <radialGradient id="ballFill" cx="38%" cy="32%" r="72%">
           <stop offset="0%" stopColor="#ffffff" />
@@ -132,11 +149,28 @@ function SmartBall({ reduceMotion }) {
         </linearGradient>
       </defs>
 
-      {/* pitch shadow */}
+      {/* Measurement ticks along the baseline: this is equipment, and the
+          marks say so before any label is read. */}
+      <g stroke="hsl(158 32% 9%)" strokeOpacity="0.18" strokeWidth="1.5" strokeLinecap="round">
+        {Array.from({ length: 13 }, (_, i) => (
+          <line key={i} x1={54 + i * 16} y1="338" x2={54 + i * 16} y2={i % 4 === 0 ? 328 : 333} />
+        ))}
+        <line x1="54" y1="338" x2="246" y2="338" strokeOpacity="0.28" />
+      </g>
+
       <ellipse cx="150" cy="322" rx="96" ry="14" fill="hsl(158 32% 9%)" opacity="0.10" />
 
-      {/* flight of the strike */}
-      <path d="M196 214 C 268 178, 320 132, 372 74" fill="none" stroke="url(#arcFade)" strokeWidth="2.5" strokeDasharray="7 9" strokeLinecap="round" />
+      {/* Flight of the strike. The dashes travel, so the arc reads as a signal
+          leaving the ball rather than as a dotted decoration. */}
+      <path
+        d="M196 214 C 268 178, 320 132, 372 74"
+        fill="none"
+        stroke="url(#arcFade)"
+        strokeWidth="2.5"
+        strokeDasharray="7 9"
+        strokeLinecap="round"
+        className={reduceMotion ? "" : "animate-signalFlow"}
+      />
       <circle cx="372" cy="74" r="4.5" fill="hsl(82 92% 44%)" />
 
       {/* contact pulse */}
@@ -157,6 +191,37 @@ function SmartBall({ reduceMotion }) {
         <rect x="-21" y="-15" width="42" height="30" rx="7" fill="hsl(154 52% 17%)" />
         <rect x="-13" y="-8" width="26" height="16" rx="3" fill="hsl(82 92% 44%)" opacity="0.92" />
         <path d="M-21 -6 h-7 M-21 6 h-7 M21 -6 h7 M21 6 h7" stroke="hsl(154 52% 17%)" strokeWidth="2.4" strokeLinecap="round" />
+      </g>
+
+      {/* ---- annotations: what the thing actually is ---- */}
+      <g fontFamily="'JetBrains Mono', monospace" fontSize="10" fontWeight="600" letterSpacing="0.08em">
+        {/* 01 the sensor */}
+        <g className={annotate} style={step(0)}>
+          <path d="M150 232 L 60 150 L 14 150" fill="none" stroke="hsl(158 32% 9%)" strokeOpacity="0.35" strokeWidth="1.2" />
+          <circle cx="150" cy="232" r="3" fill="hsl(154 52% 17%)" />
+          <text x="14" y="122" fill="hsl(158 32% 9%)" fillOpacity="0.55">01 SENSOR</text>
+          <text x="14" y="138" fill="hsl(158 32% 9%)" fillOpacity="0.85" fontSize="11">MPU6050</text>
+          <text x="14" y="153" fill="hsl(158 32% 9%)" fillOpacity="0.5" fontSize="8">±16 g · ±2000 °/s</text>
+        </g>
+
+        {/* 02 the moment of contact */}
+        <g className={annotate} style={step(1)}>
+          <path d="M104 290 L 70 314 L 14 314" fill="none" stroke="hsl(158 32% 9%)" strokeOpacity="0.35" strokeWidth="1.2" />
+          <text x="14" y="304" fill="hsl(158 32% 9%)" fillOpacity="0.55">02 IMPACT</text>
+          <text x="14" y="318" fill="hsl(158 32% 9%)" fillOpacity="0.5" fontSize="9">peak across 120 ms</text>
+        </g>
+
+        {/* 03 what leaves the ball */}
+        <g className={annotate} style={step(2)}>
+          <path d="M300 140 L 336 120" fill="none" stroke="hsl(158 32% 9%)" strokeOpacity="0.35" strokeWidth="1.2" />
+          <text x="222" y="136" fill="hsl(158 32% 9%)" fillOpacity="0.55">03 SIGNAL</text>
+          <text x="222" y="151" fill="hsl(158 32% 9%)" fillOpacity="0.5" fontSize="9">over Wi-Fi, per kick</text>
+        </g>
+
+        {/* 04 where it lands */}
+        <g className={annotate} style={step(3)}>
+          <text x="330" y="58" fill="hsl(158 32% 9%)" fillOpacity="0.55">04 DATA</text>
+        </g>
       </g>
     </svg>
   );
@@ -353,7 +418,7 @@ export default function Landing() {
             <BrandMark />
           </Link>
 
-          <ul className="ml-4 hidden items-center gap-7 md:flex">
+          <ul className="ml-4 hidden items-center gap-7 lg:flex">
             {SECTIONS.map((s) => (
               <li key={s.id}>
                 <a href={`#${s.id}`} className="text-sm text-muted-foreground transition-colors hover:text-foreground">

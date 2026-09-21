@@ -450,6 +450,32 @@ h1, h2, h3, h4, .font-display {
   animation: impactLift 0.6s cubic-bezier(0.16, 1, 0.3, 1) 1;
 }
 
+/* Signal travelling along the strike arc in the landing hero: the dashes
+   move, so the line reads as propagation rather than as a dotted rule. Paired
+   with a dasharray on the path itself. */
+@keyframes signalFlow {
+  to { stroke-dashoffset: -32; }
+}
+.animate-signalFlow {
+  animation: signalFlow 1.6s linear infinite;
+}
+
+/* Hero annotations arriving after the ball, so the composition reads
+   ball -> impact -> signal -> data rather than all at once. */
+@keyframes annotate {
+  from { opacity: 0; transform: translateY(6px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+.animate-annotate {
+  opacity: 0;
+  animation: annotate 0.7s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+}
+/* Reduced motion strips the movement but must not strip the label: the
+   annotations carry the hero's explanation. */
+@media (prefers-reduced-motion: reduce) {
+  .animate-annotate { opacity: 1; animation: none; }
+}
+
 @keyframes spin-slow {
   from { transform: rotate(0deg); }
   to { transform: rotate(360deg); }
