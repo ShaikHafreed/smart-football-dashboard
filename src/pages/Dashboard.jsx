@@ -11,6 +11,7 @@ import PageHeader from "../components/common/PageHeader";
 import StateBlock from "../components/common/StateBlock";
 import MeasurementLegend from "../components/common/MeasurementLegend";
 import { supabase } from "../lib/supabaseClient";
+import { checkRelayHealth } from "../lib/flaskClient";
 
 export default function Dashboard() {
 
@@ -23,6 +24,12 @@ export default function Dashboard() {
     connected: false,
     lastReadingAt: null,
   });
+
+  // Whether the relay is answering, observed separately from whether the ball
+  // is sending. "No readings" used to have one explanation on screen and two
+  // in reality, and they call for opposite responses.
+  const [relay, setRelay] = useState("checking");
+  const [relayProbe, setRelayProbe] = useState(0);
 
   const [kickCount, setKickCount] = useState(0);
   const [chartData, setChartData] = useState([]);
@@ -135,6 +142,22 @@ export default function Dashboard() {
 
   }, [activeDeviceId]);
 
+  // Probing on mount, and again when the panel asks. Nothing is set
+  // synchronously here: the effect only starts the request and the timer, so
+  // the first paint already says "checking" from the initial state.
+  useEffect(() => {
+    let cancelled = false;
+    const slow = setTimeout(() => { if (!cancelled) setRelay("waiting"); }, 5000);
+
+    checkRelayHealth().then(({ ok, reason }) => {
+      clearTimeout(slow);
+      if (cancelled) return;
+      setRelay(ok ? "ok" : reason === "misconfigured" ? "misconfigured" : "unreachable");
+    });
+
+    return () => { cancelled = true; clearTimeout(slow); };
+  }, [relayProbe]);
+
   const connectionStatus = data.connected ? "connected" : "disconnected";
 
   if (!activeDeviceId) {
@@ -188,7 +211,8 @@ export default function Dashboard() {
         <ConnectionPanel
           status={connectionStatus}
           lastReadingAt={data.lastReadingAt}
-          onReconnect={() => window.location.reload()}
+          relay={relay}
+          onReconnect={() => { setRelay("checking"); setRelayProbe((n) => n + 1); }}
         />
       </div>
 

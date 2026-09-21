@@ -24,6 +24,32 @@ const STATUS = {
   },
 };
 
+/**
+ * "Nothing is arriving" had one explanation on screen and two in reality: the
+ * ball is not sending, or the relay that accepts readings is not answering.
+ * They need opposite responses - check the ball, versus wait or get the
+ * service back - and the panel could not tell them apart.
+ *
+ * Relay state is a separate, independently observed fact, so it is shown as
+ * one. Nothing here is inferred from the other: each line reports something
+ * actually checked.
+ */
+const RELAY = {
+  checking: { label: "Checking relay…", detail: "Asking the relay whether it's awake." },
+  waiting: {
+    label: "Still waiting on the relay",
+    detail: "The relay sleeps when idle and can take up to a minute to answer. Readings can't arrive until it does.",
+  },
+  unreachable: {
+    label: "Relay unreachable",
+    detail: "The ball may be fine — the service that accepts its readings isn't answering.",
+  },
+  misconfigured: {
+    label: "No relay configured",
+    detail: "This deployment has no backend URL set, so readings have nowhere to arrive.",
+  },
+};
+
 /** How long ago, in the coarse terms that are actually useful here. */
 function freshness(iso) {
   if (!iso) return null;
@@ -35,10 +61,13 @@ function freshness(iso) {
   return `${Math.floor(seconds / 86400)}d ago`;
 }
 
-export default function ConnectionPanel({ status = "disconnected", lastReadingAt, onReconnect }) {
+export default function ConnectionPanel({ status = "disconnected", lastReadingAt, relay = "ok", onReconnect }) {
   const since = freshness(lastReadingAt);
   const cfg = STATUS[status] || STATUS.disconnected;
   const isConnected = status === "connected";
+  // Only worth saying while nothing is arriving: once readings are coming in,
+  // the relay is demonstrably up and repeating that adds noise.
+  const relayNote = !isConnected ? RELAY[relay] : null;
 
   return (
     <section className="panel flex flex-col p-5" aria-label="Ball connection">
@@ -58,7 +87,19 @@ export default function ConnectionPanel({ status = "disconnected", lastReadingAt
         </span>
       </div>
 
-      <p className="mt-3 text-xs leading-relaxed text-muted-foreground">{cfg.detail}</p>
+      <p className="mt-3 text-xs leading-relaxed text-muted-foreground">
+        {relayNote ? relayNote.detail : cfg.detail}
+      </p>
+
+      {relayNote && (
+        <p className="mt-2 flex items-center gap-1.5 text-xs font-medium text-foreground">
+          <span
+            aria-hidden="true"
+            className={`h-1.5 w-1.5 rounded-full ${relay === "checking" || relay === "waiting" ? "bg-muted-foreground motion-safe:animate-pulse" : "bg-destructive"}`}
+          />
+          {relayNote.label}
+        </p>
+      )}
 
       {/* Stale numbers on screen are worse than no numbers, so say plainly
           how old the one being shown is. */}
@@ -70,9 +111,13 @@ export default function ConnectionPanel({ status = "disconnected", lastReadingAt
       </p>
 
       {!isConnected && (
-        <button onClick={onReconnect} className="btn btn-quiet btn-sm mt-4 w-full">
+        <button
+          onClick={onReconnect}
+          disabled={relay === "checking"}
+          className="btn btn-quiet btn-sm mt-4 w-full"
+        >
           <RefreshCw aria-hidden="true" className="h-3.5 w-3.5" />
-          Retry connection
+          {relay === "checking" ? "Checking…" : "Check again"}
         </button>
       )}
     </section>

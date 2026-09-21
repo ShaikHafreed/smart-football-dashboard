@@ -61,3 +61,39 @@ export async function authedFetch(path, options = {}) {
 
   return resp;
 }
+
+/**
+ * Is the relay itself reachable, independent of whether the ball is sending
+ * anything?
+ *
+ * These are two different facts and the dashboard used to show only their
+ * combination, so "no readings" looked identical whether the ball was switched
+ * off or the relay was down. On the free hosting tier the relay also sleeps
+ * when idle and takes the better part of a minute to wake, during which a
+ * perfectly healthy system reports nothing at all.
+ *
+ * /healthz is public and unauthenticated by design, so this needs no session
+ * and tells us nothing privileged - only whether the thing that accepts
+ * readings is currently answering.
+ */
+export async function checkRelayHealth({ timeoutMs = 60000 } = {}) {
+  try {
+    assertSecureBackendUrl();
+  } catch (error) {
+    return { ok: false, reason: "misconfigured", message: error.message };
+  }
+
+  // A sleeping free-tier instance can take most of a minute to answer, which
+  // is a wait worth allowing rather than reporting as "down".
+  const abort = new AbortController();
+  const timer = setTimeout(() => abort.abort(), timeoutMs);
+
+  try {
+    const resp = await fetch(`${FLASK_URL}/healthz`, { signal: abort.signal });
+    return resp.ok ? { ok: true } : { ok: false, reason: "unhealthy" };
+  } catch {
+    return { ok: false, reason: "unreachable" };
+  } finally {
+    clearTimeout(timer);
+  }
+}
