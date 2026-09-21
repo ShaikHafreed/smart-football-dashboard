@@ -19,6 +19,8 @@ const h = vi.hoisted(() => {
     eq(col, val) { state.calls.push({ type: "eq", table: this.table, col, val }); return this; }
     in(col, vals) { state.calls.push({ type: "in", table: this.table, col, vals }); return this; }
     ilike(col, val) { state.calls.push({ type: "ilike", table: this.table, col, val }); return this; }
+    or(filters) { state.calls.push({ type: "or", table: this.table, filters }); return this; }
+    gte(col, val) { state.calls.push({ type: "gte", table: this.table, col, val }); return this; }
     then(resolve, reject) {
       const next = state.queue.length ? state.queue.shift() : state.fallback;
       return Promise.resolve(next).then(resolve, reject);
@@ -52,6 +54,11 @@ import {
   fetchRecentShots,
   fetchDailyTotals,
   fetchShotHistoryPage,
+  fetchShotHistoryCount,
+  keysetFilter,
+  cursorOf,
+  rangeSince,
+  HISTORY_RANGES,
   fetchSessionsWithShots,
   fetchPlayerShotStats,
   HISTORY_PAGE_SIZE,
@@ -275,24 +282,105 @@ describe("fetchDailyTotals", () => {
   });
 });
 
-describe("fetchShotHistoryPage", () => {
-  it("requests exactly one page and an exact total", async () => {
-    await fetchShotHistoryPage({ page: 2 });
-    expect(callsOfType("range")[0]).toMatchObject({
-      from: 2 * HISTORY_PAGE_SIZE,
-      to: 2 * HISTORY_PAGE_SIZE + HISTORY_PAGE_SIZE - 1,
-    });
-    expect(callsOfType("select")[0].opts).toMatchObject({ count: "exact" });
+describe("keyset cursor helpers", () => {
+  it("builds a strict 'after this row' predicate with a tiebreak on id", () => {
+    // Without the id half, two kicks sharing a timestamp straddle the page
+    // boundary and one of them is lost or shown twice.
+    expect(keysetFilter({ createdAt: "2026-09-21T10:00:00.123456+00:00", id: "abc" })).toBe(
+      "created_at.lt.2026-09-21T10:00:00.123456+00:00," +
+      "and(created_at.eq.2026-09-21T10:00:00.123456+00:00,id.lt.abc)"
+    );
   });
 
-  it("covers the first page from row zero", async () => {
-    await fetchShotHistoryPage({ page: 0, pageSize: 10 });
-    expect(callsOfType("range")[0]).toMatchObject({ from: 0, to: 9 });
+  it("passes the database timestamp through untouched", () => {
+    // Re-parsing it through Date would truncate microseconds to milliseconds
+    // and silently skip every row sharing that millisecond.
+    const createdAt = "2026-09-21T10:00:00.123456+00:00";
+    expect(keysetFilter({ createdAt, id: "x" })).toContain(createdAt);
+  });
+
+  it("reads a cursor off a row, and nothing off no row", () => {
+    expect(cursorOf({ id: "r1", created_at: "t1" })).toEqual({ id: "r1", createdAt: "t1" });
+    expect(cursorOf(undefined)).toBeNull();
+  });
+});
+
+describe("rangeSince", () => {
+  const now = Date.UTC(2026, 8, 21);
+
+  it("returns no bound for all time", () => {
+    expect(rangeSince("all", now)).toBeNull();
+  });
+
+  it("bounds each window at the right distance back", () => {
+    expect(rangeSince("7d", now)).toBe(new Date(now - 7 * 86400000).toISOString());
+    expect(rangeSince("90d", now)).toBe(new Date(now - 90 * 86400000).toISOString());
+  });
+
+  it("treats an unknown range as unbounded rather than throwing", () => {
+    expect(rangeSince("nonsense", now)).toBeNull();
+  });
+
+  it("offers all time first, so the default window changes nothing", () => {
+    expect(HISTORY_RANGES[0]).toMatchObject({ id: "all", days: null });
+  });
+});
+
+describe("fetchShotHistoryPage", () => {
+  it("orders by created_at then id, so the ordering is total", async () => {
+    await fetchShotHistoryPage({});
+    expect(callsOfType("order")).toMatchObject([
+      { col: "created_at", opts: { ascending: false } },
+      { col: "id", opts: { ascending: false } },
+    ]);
+  });
+
+  it("asks for one row beyond the page, to learn whether there is a next one", async () => {
+    await fetchShotHistoryPage({ pageSize: 25 });
+    expect(callsOfType("limit")[0]).toMatchObject({ n: 26 });
+  });
+
+  it("never uses an offset", async () => {
+    await fetchShotHistoryPage({});
+    expect(callsOfType("range")).toHaveLength(0);
+  });
+
+  it("resumes after the cursor when given one", async () => {
+    await fetchShotHistoryPage({ cursor: { createdAt: "t9", id: "i9" } });
+    expect(callsOfType("or")[0].filters).toBe("created_at.lt.t9,and(created_at.eq.t9,id.lt.i9)");
+  });
+
+  it("starts at the top when there is no cursor", async () => {
+    await fetchShotHistoryPage({});
+    expect(callsOfType("or")).toHaveLength(0);
+  });
+
+  it("trims the probe row off the page it returns", async () => {
+    const rows = Array.from({ length: 4 }, (_, i) => ({ id: `r${i}`, created_at: `t${i}` }));
+    queue({ data: rows, error: null });
+    const { data, hasMore, nextCursor } = await fetchShotHistoryPage({ pageSize: 3 });
+    expect(data).toHaveLength(3);
+    expect(hasMore).toBe(true);
+    // The cursor is the last row SHOWN, not the probe row that was trimmed.
+    expect(nextCursor).toEqual({ id: "r2", createdAt: "t2" });
+  });
+
+  it("reports the last page as having no next", async () => {
+    queue({ data: [{ id: "r0", created_at: "t0" }], error: null });
+    const { data, hasMore, nextCursor } = await fetchShotHistoryPage({ pageSize: 3 });
+    expect(data).toHaveLength(1);
+    expect(hasMore).toBe(false);
+    expect(nextCursor).toBeNull();
   });
 
   it("filters by player in the query", async () => {
     await fetchShotHistoryPage({ playerId: "p1" });
     expect(callsOfType("eq")[0]).toMatchObject({ col: "player_id", val: "p1" });
+  });
+
+  it("bounds the window when a date range is given", async () => {
+    await fetchShotHistoryPage({ since: "2026-01-01T00:00:00Z" });
+    expect(callsOfType("gte")[0]).toMatchObject({ col: "created_at", val: "2026-01-01T00:00:00Z" });
   });
 
   it("searches the whole history via an inner join, not just the current page", async () => {
@@ -306,29 +394,30 @@ describe("fetchShotHistoryPage", () => {
     expect(callsOfType("select")[0].cols).not.toContain("!inner");
   });
 
-  it("counts on the first page, because the pager needs a total", async () => {
-    await fetchShotHistoryPage({ page: 0 });
-    expect(callsOfType("select")[0].opts).toMatchObject({ count: "exact" });
-  });
-
-  it("skips the count on later pages, which cannot change it", async () => {
-    // Measured at ~1.6s on its own over 300k rows: the exact count is a full
-    // count of every visible row, and turning a page does not alter it.
-    await fetchShotHistoryPage({ page: 3, withCount: false });
+  it("does not count, so the rows never wait on the total", async () => {
+    await fetchShotHistoryPage({});
     expect(callsOfType("select")[0].opts).toBeUndefined();
   });
+});
 
-  it("reports a skipped count as null, not as zero", async () => {
-    queue({ data: [{ id: 1 }], error: null, count: null });
-    const { count } = await fetchShotHistoryPage({ page: 3, withCount: false });
-    // Zero would make the caller wipe a total it should be keeping.
-    expect(count).toBeNull();
+describe("fetchShotHistoryCount", () => {
+  it("asks only for the total, not for the rows", async () => {
+    await fetchShotHistoryCount({});
+    expect(callsOfType("select")[0].opts).toMatchObject({ count: "exact", head: true });
   });
 
-  it("returns the count the pager is built from", async () => {
-    queue({ data: [{ id: 1 }], error: null, count: 137 });
-    const { count } = await fetchShotHistoryPage({});
-    expect(count).toBe(137);
+  it("applies the same filters as the page, or the pager would disagree with itself", async () => {
+    await fetchShotHistoryCount({ playerId: "p1", search: "sam", since: "2026-01-01T00:00:00Z" });
+    expect(callsOfType("eq")[0]).toMatchObject({ col: "player_id", val: "p1" });
+    expect(callsOfType("ilike")[0]).toMatchObject({ col: "football_players.name", val: "%sam%" });
+    expect(callsOfType("gte")[0]).toMatchObject({ col: "created_at", val: "2026-01-01T00:00:00Z" });
+  });
+
+  it("reports a failed count as null, so the caller shows no total rather than zero", async () => {
+    queue({ data: null, error: { message: "nope" }, count: null });
+    const { count, error } = await fetchShotHistoryCount({});
+    expect(error).toBeTruthy();
+    expect(count).toBeNull();
   });
 });
 

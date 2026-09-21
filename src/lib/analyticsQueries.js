@@ -225,37 +225,121 @@ export async function fetchSessionsWithShots(playerIds, { limit = SESSION_LIST_L
 }
 
 /**
- * One page of shot history. Search matches the player's name in the database
- * via an inner join, so it searches the whole history rather than only the
- * rows already on screen — and the returned count stays consistent with the
- * filter, which is what the pager is built from.
+ * The date windows the history screen offers. Bounding the window is the only
+ * thing that makes the exact count cheap: benchmarked at 1M shots an
+ * unbounded count took 1690 ms against 101 ms for a seven-day window, and the
+ * bounded one stays flat as the table grows because it reads a window, not a
+ * table.
+ */
+export const HISTORY_RANGES = [
+  { id: "all", label: "All time", days: null },
+  { id: "90d", label: "Last 90 days", days: 90 },
+  { id: "30d", label: "Last 30 days", days: 30 },
+  { id: "7d", label: "Last 7 days", days: 7 },
+];
+
+/** Range id -> the ISO lower bound to filter on, or null for no bound. */
+export function rangeSince(rangeId, now = Date.now()) {
+  const range = HISTORY_RANGES.find((r) => r.id === rangeId);
+  if (!range?.days) return null;
+  return new Date(now - range.days * 24 * 60 * 60 * 1000).toISOString();
+}
+
+/** The position of a row in the history ordering, used to resume after it. */
+export function cursorOf(row) {
+  return row ? { createdAt: row.created_at, id: row.id } : null;
+}
+
+/**
+ * "Strictly after this row in (created_at desc, id desc) order", as PostgREST
+ * spells it. The id half is not decoration: two kicks can share a timestamp,
+ * and without a tiebreaker the boundary row is ambiguous, which is exactly
+ * where a pager loses or repeats a row.
+ *
+ * Values are interpolated raw on purpose. The timestamp keeps the database's
+ * own microsecond precision - re-parsing it through Date would truncate to
+ * milliseconds and skip every row sharing that millisecond - and neither a
+ * PostgREST timestamp nor a uuid can contain the "," "(" ")" that would break
+ * out of the filter grammar. postgrest-js appends this through
+ * URLSearchParams, so the "+" in a timezone offset is percent-encoded rather
+ * than decoded back into a space.
+ */
+export function keysetFilter({ createdAt, id }) {
+  return `created_at.lt.${createdAt},and(created_at.eq.${createdAt},id.lt.${id})`;
+}
+
+/**
+ * One page of shot history, resumed from a cursor rather than an offset.
+ *
+ * OFFSET made the database walk and discard every row before the page: at 1M
+ * shots, page 1 cost 2 ms and page 1001 cost 1928 ms, and the cost is the
+ * depth rather than the table size. A keyset seeks straight to the boundary
+ * through the created_at index and reads 25 rows, which measured 0.5-1.9 ms
+ * at every depth tested.
+ *
+ * It is also the correct answer while a session is running. OFFSET counts
+ * from the top of a list that new kicks are being inserted into, so a shot
+ * arriving between two page turns shifts everything down and the next page
+ * repeats a row it already showed. A cursor is anchored to a row, so inserts
+ * above it change nothing.
+ *
+ * Fetches one row more than the page to learn whether a next page exists, so
+ * the pager works before - or without - a total count.
  */
 export async function fetchShotHistoryPage({
-  page = 0,
+  cursor = null,
   pageSize = HISTORY_PAGE_SIZE,
   playerId = "",
   search = "",
-  withCount = true,
+  since = null,
 } = {}) {
   const term = search.trim();
   const playerJoin = term ? "football_players!inner(id, name)" : "football_players(id, name)";
 
-  // The exact count is a full count of every row the viewer can see, and it
-  // cannot change while the filters stay the same. Benchmarked at 300k shots
-  // it cost ~1.6s on its own, so paying it once per filter rather than once
-  // per page turn is most of the cost of paging.
   let query = supabase
     .from("football_shots")
-    .select(`id, speed, spin, force, distance, shot_type, created_at, ${playerJoin}`,
-            withCount ? { count: "exact" } : undefined)
+    .select(`id, speed, spin, force, distance, shot_type, created_at, ${playerJoin}`)
     .order("created_at", { ascending: false })
-    .range(page * pageSize, page * pageSize + pageSize - 1);
+    .order("id", { ascending: false })
+    .limit(pageSize + 1);
 
   if (playerId) query = query.eq("player_id", playerId);
   if (term) query = query.ilike("football_players.name", `%${term}%`);
+  if (since) query = query.gte("created_at", since);
+  if (cursor) query = query.or(keysetFilter(cursor));
 
-  const { data, error, count } = await query;
-  // null when the count was not requested, so the caller can tell "no rows"
-  // from "not counted this time" and keep the total it already has.
-  return result(data, error, { count: withCount ? (count || 0) : null });
+  const { data, error } = await query;
+
+  const rows = data || [];
+  const hasMore = rows.length > pageSize;
+  const page = hasMore ? rows.slice(0, pageSize) : rows;
+
+  return result(page, error, {
+    hasMore,
+    nextCursor: hasMore ? cursorOf(page[page.length - 1]) : null,
+  });
+}
+
+/**
+ * The total for the pager, as its own request.
+ *
+ * It used to ride along with the first page, so the rows - which the keyset
+ * returns in about a millisecond - waited on a count that took over a second
+ * unbounded. Separating them lets the table render immediately and the total
+ * arrive when it arrives; nothing about the page depends on it.
+ */
+export async function fetchShotHistoryCount({ playerId = "", search = "", since = null } = {}) {
+  const term = search.trim();
+  const playerJoin = term ? "football_players!inner(id, name)" : "football_players(id, name)";
+
+  let query = supabase
+    .from("football_shots")
+    .select(`id, ${playerJoin}`, { count: "exact", head: true });
+
+  if (playerId) query = query.eq("player_id", playerId);
+  if (term) query = query.ilike("football_players.name", `%${term}%`);
+  if (since) query = query.gte("created_at", since);
+
+  const { error, count } = await query;
+  return { error: error || null, count: error ? null : count || 0 };
 }
