@@ -1,3 +1,4 @@
+import { useEffect } from "react";
 import { Link } from "react-router-dom";
 import { useReducedMotion } from "framer-motion";
 import {
@@ -20,6 +21,7 @@ import {
   Building2,
 } from "lucide-react";
 import { useAuth } from "../lib/AuthContext";
+import { prefetchRoute, onIdle } from "../lib/routes";
 
 /**
  * Public landing page.
@@ -227,6 +229,15 @@ export default function Landing() {
   const primaryCta = isAuthenticated
     ? { to: "/dashboard", label: "Open dashboard" }
     : { to: "/login", label: "Get started" };
+
+  // Whatever this visitor's next step is, it is now a separate chunk. Fetch
+  // it once the page is idle - after the landing has painted, before they
+  // reach the button - so the first click into the product is instant rather
+  // than the slowest moment of the visit.
+  useEffect(() => {
+    const cancel = onIdle(() => prefetchRoute(primaryCta.to));
+    return cancel;
+  }, [primaryCta.to]);
 
   return (
     <div className="landing min-h-screen scroll-smooth font-sans antialiased">

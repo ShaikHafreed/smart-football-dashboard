@@ -1,7 +1,8 @@
-import { useState } from "react";
+import { Suspense, useState } from "react";
 import { Outlet, useLocation, Link } from "react-router-dom";
 import { Menu } from "lucide-react";
 import Sidebar from "./Sidebar";
+import StateBlock from "../common/StateBlock";
 
 // Every authenticated route, so the header never falls back to a generic
 // label the way /devices and /organization used to.
@@ -61,7 +62,13 @@ export default function AppLayout() {
 
         <main id="content" className="flex-1 overflow-y-auto p-4 md:p-8">
           <div className="mx-auto max-w-6xl space-y-6 pb-10 md:space-y-8">
-            <Outlet />
+            {/* Pages are code-split, so a first visit to a section can be
+                waiting on its chunk. The wait belongs inside the shell: the
+                rail and the header stay put and only the content area shows
+                a state, instead of the whole screen blanking. */}
+            <Suspense fallback={<StateBlock variant="loading" />}>
+              <Outlet />
+            </Suspense>
           </div>
         </main>
       </div>

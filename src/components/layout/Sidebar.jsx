@@ -16,6 +16,7 @@ import {
   Building2,
 } from "lucide-react";
 import { useAuth } from "../../lib/AuthContext";
+import { prefetchRoute } from "../../lib/routes";
 import ConfirmDialog from "../ConfirmDialog";
 
 // Grouped so the rail reads as "where I am / what I'm doing / my setup"
@@ -97,6 +98,13 @@ function NavItems({ collapsed, onNavigate, role }) {
                   <NavLink
                     to={item.path}
                     onClick={onNavigate}
+                    // Each section is its own chunk, so the intent to go
+                    // there is the moment to fetch it: by the time the click
+                    // or the Enter key lands, it is usually already in
+                    // memory. Touch fires on the press, ahead of the tap.
+                    onMouseEnter={() => prefetchRoute(item.path)}
+                    onFocus={() => prefetchRoute(item.path)}
+                    onTouchStart={() => prefetchRoute(item.path)}
                     title={collapsed ? item.name : undefined}
                     className={({ isActive }) =>
                       `group relative flex min-h-[44px] items-center gap-3 rounded-xl px-3 text-sm font-medium transition-colors

@@ -1,8 +1,9 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useNavigate, Link } from "react-router-dom";
 import { motion, AnimatePresence } from "framer-motion";
 import { Mail, Lock, ArrowRight, Loader2 } from "lucide-react";
 import { useAuth } from "../lib/AuthContext";
+import { prefetchRoute, onIdle } from "../lib/routes";
 
 export default function Login() {
   const navigate = useNavigate();
@@ -14,6 +15,10 @@ export default function Login() {
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
   const [googleLoading, setGoogleLoading] = useState(false);
+
+  // Everyone who succeeds here lands on the dashboard, so fetch its chunk
+  // while they are still typing rather than after they have committed.
+  useEffect(() => onIdle(() => prefetchRoute("/dashboard")), []);
 
   const handleGoogle = async () => {
     setError("");
