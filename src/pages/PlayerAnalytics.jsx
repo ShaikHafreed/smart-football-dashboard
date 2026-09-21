@@ -126,11 +126,6 @@ export default function PlayerAnalytics() {
             ? `Personal bests across ${stats.shotCount.toLocaleString()} recorded kick${stats.shotCount === 1 ? "" : "s"}.`
             : "Personal bests, trends and drills, drawn from your own kicks."
         }
-        actions={
-          <Link to="/session" className="btn btn-primary">
-            <Zap aria-hidden="true" className="h-4 w-4" /> Start a session
-          </Link>
-        }
       />
 
       {error && (
@@ -142,7 +137,7 @@ export default function PlayerAnalytics() {
           icon={Gauge}
           title="No kicks recorded yet"
           message="Start a session with a paired ball and your bests, trend and drills will build up here."
-          action={<Link to="/session" className="btn btn-primary">Go to Session</Link>}
+          action={<Link to="/session" className="btn btn-primary btn-sm"><Zap aria-hidden="true" className="h-4 w-4" /> Start a session</Link>}
         />
       ) : (
         <>

@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { motion } from "framer-motion";
-import { Trophy, Search } from "lucide-react";
+import { Link } from "react-router-dom";
+import { Trophy, Search, Zap } from "lucide-react";
 import { supabase } from "../lib/supabaseClient";
 import { fetchLeaderboard, LEADERBOARD_LIMIT } from "../lib/analyticsQueries";
 import PageHeader from "../components/common/PageHeader";
@@ -92,7 +93,7 @@ export default function Leaderboard() {
       <PageHeader
         eyebrow="Overview"
         title="Leaderboard"
-        description="Ranked by each player's best strike score — the speed index and impact of one kick, combined for ranking."
+        description="Every player's best single strike, ranked."
       />
 
       {rows.length > 0 && (
@@ -120,11 +121,13 @@ export default function Leaderboard() {
       )}
 
       {/* The score mixes a full-scale index with a value in g, so it orders
-          players without being a quantity in its own right. Saying so is
-          cheaper than letting someone read it as a speed. */}
+          players without being a quantity in its own right. Saying so once, in
+          the place someone reads the number, is the point -- the page
+          description used to say it too, which cost a phone screen of space
+          before any ranking appeared. */}
       <p className="text-xs leading-relaxed text-muted-foreground">
-        The strike score is a ranking figure, not a measurement — it combines the speed index and
-        impact of a single kick.
+        Strike score is a ranking figure, not a measurement: the speed index and impact of one kick,
+        combined.
       </p>
 
       {loading && <StateBlock variant="loading" />}
@@ -134,6 +137,11 @@ export default function Leaderboard() {
           icon={Trophy}
           title="Nothing ranked yet"
           message="Run a session with a player selected and their best strike appears here."
+          action={
+            <Link to="/session" className="btn btn-primary btn-sm">
+              <Zap aria-hidden="true" className="h-4 w-4" /> Start a session
+            </Link>
+          }
         />
       )}
 

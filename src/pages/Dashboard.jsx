@@ -173,11 +173,6 @@ export default function Dashboard() {
         eyebrow="Live"
         title="Dashboard"
         description="Readings from the paired ball, as they land."
-        actions={
-          <Link to="/session" className="btn btn-primary">
-            <Zap aria-hidden="true" className="h-4 w-4" /> Start a session
-          </Link>
-        }
       />
 
       {/* MEASUREMENTS — one instrument panel, not four floating cards */}
