@@ -90,7 +90,18 @@ export async function checkRelayHealth({ timeoutMs = 60000 } = {}) {
 
   try {
     const resp = await fetch(`${FLASK_URL}/healthz`, { signal: abort.signal });
-    return resp.ok ? { ok: true } : { ok: false, reason: "unhealthy" };
+    if (!resp.ok) return { ok: false, reason: "unhealthy" };
+
+    // The relay answers 200 while it is running, and says in the body whether
+    // it can actually reach the database it needs to verify anyone. Reading
+    // only the status would report a relay that cannot authenticate a single
+    // request as healthy -- which is precisely how a bad SUPABASE_URL stayed
+    // invisible in production.
+    const body = await resp.json().catch(() => null);
+    if (body?.status === "degraded") {
+      return { ok: false, reason: "degraded", dependency: body?.dependencies?.supabase };
+    }
+    return { ok: true };
   } catch {
     return { ok: false, reason: "unreachable" };
   } finally {

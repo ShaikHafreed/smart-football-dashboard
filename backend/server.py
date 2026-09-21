@@ -1115,9 +1115,63 @@ def delete_account(user_id):
 # HEALTH CHECK (for uptime monitoring)
 # ==========================================
 
+# A reachability probe is cached so that a public, unauthenticated endpoint
+# cannot be used to generate one upstream request per call.
+HEALTH_DEPENDENCY_TTL_SECONDS = 30.0
+_dependency_health = {"checked_at": 0.0, "supabase": "unknown"}
+
+
+def _supabase_reachability(now=None):
+    """Can this process actually reach the Supabase project it is pointed at?
+
+    Every authenticated route verifies its caller's token against Supabase, so
+    a SUPABASE_URL that does not resolve breaks all of them -- while the
+    process itself keeps serving, and a health check that only reports "I am
+    running" keeps saying ok. That is exactly how a typo in the deployed
+    SUPABASE_URL went unnoticed in production: /healthz answered 200 the whole
+    time, and nothing authenticated had been tried against it.
+
+    Uses GoTrue's own /auth/v1/health, which needs no user and returns no
+    data about anyone."""
+    now = time.time() if now is None else now
+
+    if not SUPABASE_URL or not SUPABASE_SERVICE_ROLE_KEY:
+        return "unconfigured"
+
+    if now - _dependency_health["checked_at"] < HEALTH_DEPENDENCY_TTL_SECONDS:
+        return _dependency_health["supabase"]
+
+    try:
+        resp = requests.get(
+            f"{SUPABASE_URL}/auth/v1/health",
+            headers={"apikey": SUPABASE_SERVICE_ROLE_KEY},
+            timeout=3,
+        )
+        state = "ok" if resp.ok else "error"
+    except requests.RequestException:
+        # Covers DNS failure, refused connections and timeouts alike: from
+        # here they are the same fact -- we cannot authenticate anyone.
+        state = "unreachable"
+
+    _dependency_health.update(checked_at=now, supabase=state)
+    return state
+
+
 @app.route("/healthz", methods=["GET"])
 def healthz():
-    return jsonify({"status": "ok", "time": time.time()}), 200
+    """Still 200 while the process is serving, so a platform health check does
+    not restart-loop a relay that is merely waiting on a dependency -- but the
+    body now says whether the dependency is actually reachable, because
+    "status": "ok" while every authenticated request fails is the lie that
+    hid a broken deployment."""
+    supabase_state = _supabase_reachability()
+    healthy = supabase_state == "ok"
+
+    return jsonify({
+        "status": "ok" if healthy else "degraded",
+        "time": time.time(),
+        "dependencies": {"supabase": supabase_state},
+    }), 200
 
 
 # ==========================================

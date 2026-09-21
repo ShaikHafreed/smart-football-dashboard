@@ -32,6 +32,10 @@ def reset_state():
     server.device_session_cache.clear()
     server.SUPABASE_URL = "https://fake-project.supabase.co"
     server.SUPABASE_SERVICE_ROLE_KEY = "fake-service-role-key"
+    # The dependency probe caches across calls, so a stale entry would leak
+    # one test's answer into the next -- and an unreset cache would also let
+    # a test reach the real network.
+    server._dependency_health.update(checked_at=0.0, supabase="unknown")
     yield
     server.device_state.clear()
     server.device_session_cache.clear()
@@ -187,10 +191,69 @@ class TestIngestReading:
 # ==========================================
 
 class TestRoutes:
-    def test_healthz(self, client):
+    def test_healthz(self, client, monkeypatch):
+        monkeypatch.setattr(server.requests, "get", lambda *a, **k: MagicMock(ok=True))
         resp = client.get("/healthz")
         assert resp.status_code == 200
         assert resp.get_json()["status"] == "ok"
+        assert resp.get_json()["dependencies"]["supabase"] == "ok"
+
+    def test_healthz_reports_degraded_when_supabase_is_unreachable(self, client, monkeypatch):
+        """A relay that cannot reach Supabase cannot authenticate anybody, so
+        every authenticated route fails -- but the process is still serving.
+        Reporting "ok" there is what let a typo in the deployed SUPABASE_URL
+        sit unnoticed in production."""
+        def boom(*a, **k):
+            raise server.requests.RequestException("dns")
+
+        monkeypatch.setattr(server.requests, "get", boom)
+        resp = client.get("/healthz")
+
+        # Still 200: the platform health check must not restart-loop a relay
+        # that is only waiting on a dependency.
+        assert resp.status_code == 200
+        assert resp.get_json()["status"] == "degraded"
+        assert resp.get_json()["dependencies"]["supabase"] == "unreachable"
+
+    def test_healthz_reports_an_upstream_error_as_degraded_too(self, client, monkeypatch):
+        monkeypatch.setattr(server.requests, "get", lambda *a, **k: MagicMock(ok=False))
+        resp = client.get("/healthz")
+        assert resp.get_json()["status"] == "degraded"
+        assert resp.get_json()["dependencies"]["supabase"] == "error"
+
+    def test_healthz_reports_missing_configuration_distinctly(self, client, monkeypatch):
+        """"Not configured" and "configured but unreachable" need different
+        fixes, so they are not collapsed into one word."""
+        monkeypatch.setattr(server, "SUPABASE_URL", "")
+        resp = client.get("/healthz")
+        assert resp.get_json()["status"] == "degraded"
+        assert resp.get_json()["dependencies"]["supabase"] == "unconfigured"
+
+    def test_healthz_caches_the_probe_so_it_cannot_be_used_to_hammer_supabase(self, client, monkeypatch):
+        """/healthz is public and unauthenticated, so one upstream request per
+        caller would be a free amplifier."""
+        calls = []
+
+        def counted(*a, **k):
+            calls.append(1)
+            return MagicMock(ok=True)
+
+        monkeypatch.setattr(server.requests, "get", counted)
+        for _ in range(5):
+            client.get("/healthz")
+
+        assert len(calls) == 1
+
+    def test_healthz_probe_refreshes_once_the_cache_expires(self, client, monkeypatch):
+        calls = []
+        monkeypatch.setattr(server.requests, "get",
+                            lambda *a, **k: (calls.append(1), MagicMock(ok=True))[1])
+
+        client.get("/healthz")
+        server._dependency_health["checked_at"] -= server.HEALTH_DEPENDENCY_TTL_SECONDS + 1
+        client.get("/healthz")
+
+        assert len(calls) == 2
 
     def test_legacy_esp_data_endpoint_is_gone(self, client):
         """The unauthenticated GET ingest path was removed -- it let anyone

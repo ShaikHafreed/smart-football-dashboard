@@ -152,7 +152,10 @@ export default function Dashboard() {
     checkRelayHealth().then(({ ok, reason }) => {
       clearTimeout(slow);
       if (cancelled) return;
-      setRelay(ok ? "ok" : reason === "misconfigured" ? "misconfigured" : "unreachable");
+      if (ok) return setRelay("ok");
+      // "Up but can't reach its database" and "not answering at all" need
+      // different fixes, so they are not collapsed into one state.
+      setRelay(["misconfigured", "degraded"].includes(reason) ? reason : "unreachable");
     });
 
     return () => { cancelled = true; clearTimeout(slow); };

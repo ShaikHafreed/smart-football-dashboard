@@ -44,6 +44,10 @@ const RELAY = {
     label: "Relay unreachable",
     detail: "The ball may be fine — the service that accepts its readings isn't answering.",
   },
+  degraded: {
+    label: "Relay can't reach the database",
+    detail: "The relay is answering but can't reach the database behind it, so it can't verify anyone or record readings. This needs fixing on the server, not on the ball.",
+  },
   misconfigured: {
     label: "No relay configured",
     detail: "This deployment has no backend URL set, so readings have nowhere to arrive.",
