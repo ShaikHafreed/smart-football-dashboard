@@ -11,7 +11,7 @@ import PageHeader from "../components/common/PageHeader";
 import StateBlock from "../components/common/StateBlock";
 import MeasurementLegend from "../components/common/MeasurementLegend";
 import { supabase } from "../lib/supabaseClient";
-import { checkRelayHealth } from "../lib/flaskClient";
+import { useRelayHealth } from "../lib/useRelayHealth";
 
 export default function Dashboard() {
 
@@ -27,9 +27,9 @@ export default function Dashboard() {
 
   // Whether the relay is answering, observed separately from whether the ball
   // is sending. "No readings" used to have one explanation on screen and two
-  // in reality, and they call for opposite responses.
-  const [relay, setRelay] = useState("checking");
-  const [relayProbe, setRelayProbe] = useState(0);
+  // in reality, and they call for opposite responses. The session screen reads
+  // the same hook, so the two cannot disagree about whether kicks can land.
+  const relay = useRelayHealth();
 
   const [kickCount, setKickCount] = useState(0);
   const [chartData, setChartData] = useState([]);
@@ -142,25 +142,6 @@ export default function Dashboard() {
 
   }, [activeDeviceId]);
 
-  // Probing on mount, and again when the panel asks. Nothing is set
-  // synchronously here: the effect only starts the request and the timer, so
-  // the first paint already says "checking" from the initial state.
-  useEffect(() => {
-    let cancelled = false;
-    const slow = setTimeout(() => { if (!cancelled) setRelay("waiting"); }, 5000);
-
-    checkRelayHealth().then(({ ok, reason }) => {
-      clearTimeout(slow);
-      if (cancelled) return;
-      if (ok) return setRelay("ok");
-      // "Up but can't reach its database" and "not answering at all" need
-      // different fixes, so they are not collapsed into one state.
-      setRelay(["misconfigured", "degraded"].includes(reason) ? reason : "unreachable");
-    });
-
-    return () => { cancelled = true; clearTimeout(slow); };
-  }, [relayProbe]);
-
   const connectionStatus = data.connected ? "connected" : "disconnected";
 
   if (!activeDeviceId) {
@@ -214,8 +195,8 @@ export default function Dashboard() {
         <ConnectionPanel
           status={connectionStatus}
           lastReadingAt={data.lastReadingAt}
-          relay={relay}
-          onReconnect={() => { setRelay("checking"); setRelayProbe((n) => n + 1); }}
+          relay={relay.status}
+          onReconnect={relay.recheck}
         />
       </div>
 

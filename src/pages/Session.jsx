@@ -1,14 +1,33 @@
 import { useState, useEffect, useRef } from "react";
 import { Link } from "react-router-dom";
 import { motion, useReducedMotion } from "framer-motion";
-import { Play, Square, RotateCcw, User, RadioTower, Check, AlertCircle, Gauge, Zap, RotateCw, Ruler } from "lucide-react";
+import { Play, Square, RotateCcw, User, RadioTower, Check, AlertCircle, Gauge, Zap, RotateCw, Ruler, Server, Loader2, ArrowRight } from "lucide-react";
 import { supabase } from "../lib/supabaseClient";
 import { useAuth } from "../lib/AuthContext";
 import { authedFetch } from "../lib/flaskClient";
+import { useRelayHealth } from "../lib/useRelayHealth";
+import { formatClock, formatDuration } from "../utils/time";
 import PageHeader from "../components/common/PageHeader";
 import MeasurementLegend from "../components/common/MeasurementLegend";
 
 const EMPTY_READING = { speed: 0, spin: 0, force: 0, distance: 0 };
+
+const RELAY_LABEL = {
+  checking: "Checking the relay",
+  waiting: "Still waiting on the relay",
+  ok: "Relay ready to record",
+  degraded: "Relay can't reach the database",
+  unreachable: "Relay not answering",
+  misconfigured: "No relay configured",
+};
+
+const RELAY_HINT = {
+  checking: "Making sure kicks will have somewhere to land.",
+  waiting: "It sleeps when idle and can take up to a minute to wake. Starting now would record nothing.",
+  degraded: "It's answering but can't reach the database, so kicks can't be saved. This needs fixing on the server.",
+  unreachable: "Nothing is listening for kicks, so a session would record nothing.",
+  misconfigured: "This deployment has no relay URL set, so kicks have nowhere to go.",
+};
 
 // Mirrors IMPACT_WINDOW_MS in firmware/smart_football/calibration.h.
 const IMPACT_WINDOW_MS = 120;
@@ -23,8 +42,17 @@ export default function Session() {
   const [starting, setStarting] = useState(false);
   const [reading, setReading] = useState(EMPTY_READING);
   const [kickCount, setKickCount] = useState(0);
+  // What the session produced, kept after it stops so the screen can say what
+  // just happened instead of resetting to a blank timer.
+  const [summary, setSummary] = useState(null);
   const sessionIdRef = useRef(null);
   const lastReadingAtRef = useRef(null);
+  const bestRef = useRef({ force: 0, spin: 0, speed: 0 });
+
+  // The relay is the thing that actually records kicks. A session started
+  // while it cannot is a session that runs a timer and saves nothing, which
+  // is exactly what a broken deployment looked like from this screen.
+  const relay = useRelayHealth();
 
   const activeDeviceId = localStorage.getItem("activeDeviceId") || "";
 
@@ -83,6 +111,13 @@ export default function Session() {
       if (row.last_reading_at !== lastReadingAtRef.current) {
         lastReadingAtRef.current = row.last_reading_at;
         setKickCount((n) => n + 1);
+        // Bests come from the readings that actually arrived, so the summary
+        // reports the session rather than querying for it.
+        bestRef.current = {
+          force: Math.max(bestRef.current.force, Number(row.last_force) || 0),
+          spin: Math.max(bestRef.current.spin, Number(row.last_spin) || 0),
+          speed: Math.max(bestRef.current.speed, Number(row.last_speed) || 0),
+        };
       }
     };
 
@@ -98,11 +133,7 @@ export default function Session() {
     return () => supabase.removeChannel(channel);
   }, [running, activeDeviceId]);
 
-  const formatTime = () => {
-    const min = Math.floor(time / 60);
-    const sec = time % 60;
-    return `${min}:${sec < 10 ? "0" : ""}${sec}`;
-  };
+  const formatTime = () => formatClock(time);
 
   const handleStart = async () => {
     if (!activePlayer || !user) {
@@ -165,12 +196,18 @@ export default function Session() {
     setKickCount(0);
     setReading(EMPTY_READING);
     lastReadingAtRef.current = null;
+    bestRef.current = { force: 0, spin: 0, speed: 0 };
+    setSummary(null);
+    setTime(0);
     setStarting(false);
     setRunning(true);
   };
 
   const handleStop = async () => {
     setRunning(false);
+    // Recorded before the awaits, so a slow or failing network cannot cost
+    // the person the account of the session they just ran.
+    setSummary({ seconds: time, kicks: kickCount, best: bestRef.current, player: activePlayer?.name || null });
 
     if (sessionIdRef.current) {
       await supabase
@@ -192,14 +229,20 @@ export default function Session() {
     sessionIdRef.current = null;
   };
 
+  // Reset used to just blank the screen while a session was running, which
+  // left the row open in the database and the ball still bound to it on the
+  // relay -- so kicks kept being attributed to a session the person believed
+  // they had ended. It now only clears a finished session's numbers; ending a
+  // running one is Stop's job, and Stop is what the button offers instead.
   const handleReset = () => {
-    setRunning(false);
     setTime(0);
     setKickCount(0);
     setReading(EMPTY_READING);
+    setSummary(null);
+    bestRef.current = { force: 0, spin: 0, speed: 0 };
   };
 
-  const ready = !!activePlayer && !!activeDeviceId;
+  const ready = !!activePlayer && !!activeDeviceId && relay.ready;
 
   const checklist = [
     {
@@ -216,6 +259,16 @@ export default function Session() {
       icon: RadioTower,
       to: "/devices",
     },
+    {
+      // Third condition, because a session is only real if something is
+      // listening. The first two can both be green while every kick is
+      // discarded.
+      ok: relay.ready,
+      pending: relay.checking,
+      label: RELAY_LABEL[relay.status] || RELAY_LABEL.unreachable,
+      hint: relay.ready ? null : RELAY_HINT[relay.status] || RELAY_HINT.unreachable,
+      icon: Server,
+    },
   ];
 
   return (
@@ -227,14 +280,20 @@ export default function Session() {
       />
 
       {/* READINESS — both conditions, stated plainly, before the timer */}
-      <ul className="hairline-grid grid-cols-1 sm:grid-cols-2">
-        {checklist.map(({ ok, label, hint, icon: Icon, to }) => (
+      <ul aria-live="polite" className="hairline-grid grid-cols-1 sm:grid-cols-3">
+        {checklist.map(({ ok, pending, label, hint, icon: Icon, to }) => (
           <li key={label} className="flex items-start gap-3 p-5">
             <span
               className={`mt-0.5 flex h-8 w-8 shrink-0 items-center justify-center rounded-full
                 ${ok ? "bg-primary/15 text-primary" : "bg-secondary text-muted-foreground"}`}
             >
-              {ok ? <Check aria-hidden="true" className="h-4 w-4" /> : <Icon aria-hidden="true" className="h-4 w-4" />}
+              {ok ? (
+                <Check aria-hidden="true" className="h-4 w-4" />
+              ) : pending ? (
+                <Loader2 aria-hidden="true" className="h-4 w-4 animate-spin motion-reduce:animate-none" />
+              ) : (
+                <Icon aria-hidden="true" className="h-4 w-4" />
+              )}
             </span>
             <span className="min-w-0">
               <span className="block text-sm font-medium">{label}</span>
@@ -242,6 +301,11 @@ export default function Session() {
                 <span className="mt-0.5 block text-xs text-muted-foreground">
                   {hint}{" "}
                   {to && <Link to={to} className="text-primary underline underline-offset-2">Go</Link>}
+                  {Icon === Server && !relay.checking && (
+                    <button onClick={relay.recheck} className="text-primary underline underline-offset-2">
+                      Check again
+                    </button>
+                  )}
                 </span>
               )}
             </span>
@@ -315,6 +379,56 @@ export default function Session() {
         </>
       )}
 
+      {/* SESSION COMPLETE — the arc used to end by blanking the timer, so the
+          person who just ran a session had nothing telling them what it
+          produced or where it went. Every figure here was recorded during the
+          session; nothing is queried, inferred or filled in. */}
+      {!running && summary && (
+        <motion.section
+          aria-label="Session summary"
+          initial={reduceMotion ? false : { opacity: 0, y: 8 }}
+          animate={{ opacity: 1, y: 0 }}
+          className="rounded-2xl border border-primary/40 bg-primary/5 p-6 sm:p-8"
+        >
+          <p className="eyebrow">Session complete</p>
+          <h2 className="font-display mt-1 text-lg font-semibold">
+            {summary.kicks > 0
+              ? `${summary.kicks} kick${summary.kicks === 1 ? "" : "s"} recorded${summary.player ? ` for ${summary.player}` : ""}`
+              : "No kicks were recorded"}
+          </h2>
+
+          {summary.kicks > 0 ? (
+            <>
+              <dl className="mt-5 grid grid-cols-2 gap-4 sm:grid-cols-4">
+                {[
+                  { label: "Duration", value: formatDuration(summary.seconds), unit: "" },
+                  { label: "Best impact", value: summary.best.force, unit: "g" },
+                  { label: "Best spin", value: summary.best.spin, unit: "rpm" },
+                  { label: "Best speed index", value: summary.best.speed, unit: "" },
+                ].map(({ label, value, unit }) => (
+                  <div key={label}>
+                    <dt className="text-xs text-muted-foreground">{label}</dt>
+                    <dd className="font-data mt-1 text-xl font-semibold tabular-nums">
+                      {value}
+                      {unit && <span className="ml-1 text-xs font-normal text-muted-foreground">{unit}</span>}
+                    </dd>
+                  </div>
+                ))}
+              </dl>
+
+              <Link to="/history" className="btn btn-quiet btn-sm mt-6">
+                See these kicks in history <ArrowRight aria-hidden="true" className="h-4 w-4" />
+              </Link>
+            </>
+          ) : (
+            <p className="mt-2 text-sm leading-relaxed text-muted-foreground">
+              The session ran for {formatDuration(summary.seconds)} but the ball didn&rsquo;t report anything.
+              Check that it&rsquo;s powered on and on the same network, then run another.
+            </p>
+          )}
+        </motion.section>
+      )}
+
       {/* CONTROLS */}
       <div className="flex flex-col gap-3 sm:flex-row sm:justify-center">
         {!running ? (
@@ -336,9 +450,11 @@ export default function Session() {
           </motion.button>
         )}
 
-        <button onClick={handleReset} className="btn btn-quiet w-full sm:w-auto">
-          <RotateCcw aria-hidden="true" className="h-4 w-4" /> Reset timer
-        </button>
+        {!running && (time > 0 || summary) && (
+          <button onClick={handleReset} className="btn btn-quiet w-full sm:w-auto">
+            <RotateCcw aria-hidden="true" className="h-4 w-4" /> Clear
+          </button>
+        )}
       </div>
     </div>
   );
