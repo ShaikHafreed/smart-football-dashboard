@@ -20,6 +20,7 @@ import {
 } from "../lib/historyPager";
 import PageHeader from "../components/common/PageHeader";
 import StateBlock from "../components/common/StateBlock";
+import StatusDot from "../components/common/StatusDot";
 
 const PAGE_SIZE = HISTORY_PAGE_SIZE;
 const REALTIME_COALESCE_MS = 2000;
@@ -241,7 +242,7 @@ export default function History() {
           className="inline-flex items-center gap-1.5 text-xs text-muted-foreground"
           title="New kicks appear here automatically while this page is open."
         >
-          <span aria-hidden="true" className="h-1.5 w-1.5 rounded-full bg-primary motion-safe:animate-pulse" />
+          <StatusDot tone="live" pulse />
           Live
         </span>
       )}

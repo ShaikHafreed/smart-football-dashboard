@@ -1,4 +1,5 @@
 import { RadioTower, RefreshCw, WifiOff } from "lucide-react";
+import StatusDot from "../common/StatusDot";
 
 /**
  * Whether the paired ball is currently reporting.
@@ -86,7 +87,7 @@ export default function ConnectionPanel({ status = "disconnected", lastReadingAt
         </span>
 
         <span className={`chip ${cfg.tone}`}>
-          <span aria-hidden="true" className={`h-1.5 w-1.5 rounded-full ${cfg.dot}`} />
+          <StatusDot tone={isConnected ? "live" : "idle"} pulse={isConnected} />
           {cfg.label}
         </span>
       </div>
@@ -97,10 +98,7 @@ export default function ConnectionPanel({ status = "disconnected", lastReadingAt
 
       {relayNote && (
         <p className="mt-2 flex items-center gap-1.5 text-xs font-medium text-foreground">
-          <span
-            aria-hidden="true"
-            className={`h-1.5 w-1.5 rounded-full ${relay === "checking" || relay === "waiting" ? "bg-muted-foreground motion-safe:animate-pulse" : "bg-destructive"}`}
-          />
+          <StatusDot tone={relay === "checking" || relay === "waiting" ? "pending" : "error"} />
           {relayNote.label}
         </p>
       )}

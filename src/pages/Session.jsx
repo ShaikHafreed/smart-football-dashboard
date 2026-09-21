@@ -6,6 +6,8 @@ import { supabase } from "../lib/supabaseClient";
 import { useAuth } from "../lib/AuthContext";
 import { authedFetch } from "../lib/flaskClient";
 import { useRelayHealth } from "../lib/useRelayHealth";
+import { deriveSessionState, isTiming, SESSION_PRESENTATION, IMPACT_FLASH_MS } from "../lib/sessionState";
+import StatusDot from "../components/common/StatusDot";
 import { formatClock, formatDuration } from "../utils/time";
 import PageHeader from "../components/common/PageHeader";
 import MeasurementLegend from "../components/common/MeasurementLegend";
@@ -45,6 +47,9 @@ export default function Session() {
   // What the session produced, kept after it stops so the screen can say what
   // just happened instead of resetting to a blank timer.
   const [summary, setSummary] = useState(null);
+  // When the most recent kick landed. Drives the IMPACT state, so the flash
+  // only ever marks a reading that actually arrived.
+  const [lastImpactAt, setLastImpactAt] = useState(null);
   const sessionIdRef = useRef(null);
   const lastReadingAtRef = useRef(null);
   const bestRef = useRef({ force: 0, spin: 0, speed: 0 });
@@ -83,14 +88,8 @@ export default function Session() {
   }, [user, role]);
 
   useEffect(() => {
-    let interval;
-
-    if (running) {
-      interval = setInterval(() => {
-        setTime((t) => t + 1);
-      }, 1000);
-    }
-
+    if (!running) return undefined;
+    const interval = setInterval(() => setTime((t) => t + 1), 1000);
     return () => clearInterval(interval);
   }, [running]);
 
@@ -111,6 +110,7 @@ export default function Session() {
       if (row.last_reading_at !== lastReadingAtRef.current) {
         lastReadingAtRef.current = row.last_reading_at;
         setKickCount((n) => n + 1);
+        setLastImpactAt(Date.now());
         // Bests come from the readings that actually arrived, so the summary
         // reports the session rather than querying for it.
         bestRef.current = {
@@ -198,6 +198,7 @@ export default function Session() {
     lastReadingAtRef.current = null;
     bestRef.current = { force: 0, spin: 0, speed: 0 };
     setSummary(null);
+    setLastImpactAt(null);
     setTime(0);
     setStarting(false);
     setRunning(true);
@@ -239,10 +240,29 @@ export default function Session() {
     setKickCount(0);
     setReading(EMPTY_READING);
     setSummary(null);
+    setLastImpactAt(null);
     bestRef.current = { force: 0, spin: 0, speed: 0 };
   };
 
-  const ready = !!activePlayer && !!activeDeviceId && relay.ready;
+  const blockers = [
+    !activePlayer && "player",
+    !activeDeviceId && "ball",
+    !relay.ready && "relay",
+  ].filter(Boolean);
+
+  const ready = blockers.length === 0;
+
+  // Re-derived each render; `impactTick` exists only to force one more render
+  // when the flash should expire, since nothing else changes at that moment.
+  const [impactTick, setImpactTick] = useState(0);
+  const state = deriveSessionState({ running, starting, summary, blockers, lastImpactAt });
+  const presentation = SESSION_PRESENTATION[state];
+
+  useEffect(() => {
+    if (state !== "impact") return undefined;
+    const settle = setTimeout(() => setImpactTick((n) => n + 1), IMPACT_FLASH_MS);
+    return () => clearTimeout(settle);
+  }, [state, lastImpactAt, impactTick]);
 
   const checklist = [
     {
@@ -320,27 +340,51 @@ export default function Session() {
         </p>
       )}
 
-      {/* STATUS + TIMER */}
-      <section
-        aria-label="Session status"
-        className={`turf-texture relative overflow-hidden rounded-2xl border p-8 text-center transition-colors sm:p-10
-          ${running ? "border-primary/50 bg-primary/5" : "border-border bg-card"}`}
-      >
+      {/* THE STAGE — one surface that says unmistakably what state the session
+          is in. The grid and floodlight are background only: every word and
+          number here is readable with no styling at all. */}
+      <section aria-label="Session status" data-live={presentation.live} className="stage p-8 text-center sm:p-12">
         <div className="relative z-10">
-          <span className={`chip ${running ? "border-primary/40 bg-primary/15 text-primary" : "bg-secondary text-muted-foreground"}`}>
-            <span aria-hidden="true" className={`h-1.5 w-1.5 rounded-full ${running ? "bg-primary" : "bg-muted-foreground"} ${running && !reduceMotion ? "animate-pulse" : ""}`} />
-            {running ? "Session running" : "Session stopped"}
+          <span
+            className={`chip ${presentation.live ? "border-primary/40 bg-primary/15 text-primary" : "bg-secondary text-muted-foreground"}`}
+          >
+            <StatusDot tone={presentation.tone} pulse={presentation.live && !reduceMotion} />
+            <span aria-live="polite">{presentation.label}</span>
           </span>
 
-          <p className="font-data mt-6 text-5xl font-semibold tabular-nums tracking-tight sm:text-6xl" aria-live="off">
-            {formatTime()}
-          </p>
+          {/* The ring marks the kick, and only exists for the moment after one
+              lands. Keyed on the timestamp so each kick gets its own. */}
+          <div className="relative mt-7 flex items-center justify-center">
+            {state === "impact" && !reduceMotion && (
+              <span
+                key={lastImpactAt}
+                aria-hidden="true"
+                className="animate-impactRing absolute h-24 w-24 rounded-full border border-primary/60"
+              />
+            )}
+            <p
+              key={state === "impact" ? `t-${lastImpactAt}` : "t"}
+              className={`font-data relative text-5xl font-semibold tabular-nums tracking-tight sm:text-6xl
+                ${state === "impact" && !reduceMotion ? "animate-impactLift" : ""}`}
+            >
+              {formatTime()}
+            </p>
+          </div>
 
-          <p className="mt-2 text-sm text-muted-foreground">
-            {running ? (
+          <div aria-hidden="true" className="tick-rule mx-auto mt-6 w-40 opacity-60" />
+
+          <p className="mt-5 text-sm text-muted-foreground">
+            {isTiming(state) ? (
               <>
                 <span className="font-data text-foreground">{kickCount}</span> kick{kickCount === 1 ? "" : "s"} recorded
+                {activePlayer ? <> for <span className="text-foreground">{activePlayer.name}</span></> : null}
               </>
+            ) : state === "arming" ? (
+              "Binding the ball to this session…"
+            ) : state === "blocked" ? (
+              "Finish the checks above to start"
+            ) : state === "complete" ? (
+              "Stopped. Start another whenever the player is ready."
             ) : (
               "Start when the player is ready"
             )}
@@ -349,7 +393,7 @@ export default function Session() {
       </section>
 
       {/* LIVE READING — only while recording, and only real values */}
-      {running && (
+      {isTiming(state) && (
         <div className="hairline-grid grid-cols-2 sm:grid-cols-4" aria-label="Latest reading">
           {[
             { icon: Gauge, label: "Speed index", value: reading.speed, unit: "" },
@@ -357,7 +401,10 @@ export default function Session() {
             { icon: Zap, label: "Impact", value: reading.force, unit: "g" },
             { icon: Ruler, label: "Carry index", value: reading.distance, unit: "" },
           ].map(({ icon: Icon, label, value, unit }) => (
-            <div key={label} className="p-5">
+            <div
+              key={label}
+              className={`p-5 ${state === "impact" && !reduceMotion ? "animate-impactLift" : ""}`}
+            >
               <Icon aria-hidden="true" className="h-4 w-4 text-muted-foreground" />
               <p className="font-data mt-3 text-2xl font-semibold tabular-nums">
                 {value}
@@ -369,7 +416,7 @@ export default function Session() {
         </div>
       )}
 
-      {running && (
+      {isTiming(state) && (
         <>
           <p className="text-xs leading-relaxed text-muted-foreground">
             Each figure is the peak across the {IMPACT_WINDOW_MS} ms window the ball samples around
