@@ -1,28 +1,19 @@
 import { Suspense, useState } from "react";
 import { Outlet, useLocation, Link } from "react-router-dom";
-import { Menu } from "lucide-react";
+import { Menu, Zap } from "lucide-react";
 import Sidebar from "./Sidebar";
 import StateBlock from "../common/StateBlock";
 
-// Every authenticated route, so the header never falls back to a generic
-// label the way /devices and /organization used to.
-const TITLES = {
-  "/dashboard": "Dashboard",
-  "/leaderboard": "Leaderboard",
-  "/analytics": "My Performance",
-  "/session": "Session",
-  "/devices": "Devices",
-  "/organization": "Organization",
-  "/history": "Shot History",
-  "/profile": "Profile",
-};
 
 export default function AppLayout() {
   const location = useLocation();
   const [collapsed, setCollapsed] = useState(false);
   const [mobileOpen, setMobileOpen] = useState(false);
 
-  const title = TITLES[location.pathname] || "Smart Football AI";
+  // The session is the product's primary action, so the bar offers it from
+  // anywhere -- except while already there, where it would be a link to the
+  // page you are on.
+  const onSession = location.pathname === "/session";
 
   return (
     <div className="flex h-screen bg-background text-foreground">
@@ -55,9 +46,22 @@ export default function AppLayout() {
               normally carries it is off-canvas. */}
           <Link to="/dashboard" className="flex items-center gap-2 md:hidden" aria-label="Dashboard">
             <span aria-hidden="true" className="text-lg leading-none">⚽</span>
+            <span className="font-display text-sm font-semibold">Smart Football</span>
           </Link>
 
-          <h2 className="font-display truncate text-base font-semibold md:text-lg">{title}</h2>
+          {/* The page's own heading is the h1 below; repeating it here cost a
+              line of vertical space on every screen and was worst on a phone,
+              where the same words appeared twice before any content. The bar
+              carries the thing you might want from any page instead. */}
+          <div className="ml-auto flex items-center gap-2">
+            {!onSession && (
+              <Link to="/session" className="btn btn-primary btn-sm">
+                <Zap aria-hidden="true" className="h-4 w-4" />
+                <span className="hidden sm:inline">Start a session</span>
+                <span className="sm:hidden">Session</span>
+              </Link>
+            )}
+          </div>
         </header>
 
         <main id="content" className="flex-1 overflow-y-auto p-4 md:p-8">

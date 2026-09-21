@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
+import { Link } from "react-router-dom";
 import { motion } from "framer-motion";
-import { Radar, Download, Search, ChevronLeft, ChevronRight, ChevronsLeft } from "lucide-react";
+import { Radar, Download, Search, ChevronLeft, ChevronRight, ChevronsLeft, SlidersHorizontal, Zap } from "lucide-react";
 import { supabase } from "../lib/supabaseClient";
 import { downloadCsv } from "../utils/csv";
 import {
@@ -44,6 +45,11 @@ export default function History() {
   // Whether the realtime channel actually reached SUBSCRIBED, rather than
   // whether we asked it to. Nothing is claimed to be live that isn't.
   const [subscribed, setSubscribed] = useState(false);
+  // On a phone three stacked full-width controls pushed the first kick below
+  // the fold before anyone had asked to filter anything. Search stays; the
+  // rest open on request, and stay open once used so a narrowed view is never
+  // hiding its own reason.
+  const [filtersOpen, setFiltersOpen] = useState(false);
 
   const [playerFilter, setPlayerFilter] = useState("");
   const [rangeId, setRangeId] = useState("all");
@@ -191,6 +197,22 @@ export default function History() {
           />
         </div>
 
+        <button
+          onClick={() => setFiltersOpen((o) => !o)}
+          aria-expanded={filtersOpen}
+          aria-controls="history-filters"
+          className="btn btn-quiet btn-sm sm:hidden"
+        >
+          <SlidersHorizontal aria-hidden="true" className="h-4 w-4" />
+          {filtersOpen ? "Hide filters" : "Filters"}
+          {filtered && !filtersOpen ? <span className="text-primary">•</span> : null}
+        </button>
+      </div>
+
+      <div
+        id="history-filters"
+        className={`flex-col gap-3 sm:flex sm:flex-row sm:items-center ${filtersOpen ? "flex" : "hidden"}`}
+      >
         <label htmlFor="history-player" className="sr-only">Filter by player</label>
         <select
           id="history-player"
@@ -269,7 +291,13 @@ export default function History() {
               >
                 Clear filters
               </button>
-            ) : null
+            ) : (
+              // An empty history is not a dead end: the thing that fills it is
+              // one click away, and saying so is more use than saying "none".
+              <Link to="/session" className="btn btn-primary btn-sm">
+                <Zap aria-hidden="true" className="h-4 w-4" /> Start a session
+              </Link>
+            )
           }
         />
       )}

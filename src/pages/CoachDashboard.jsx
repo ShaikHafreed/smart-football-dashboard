@@ -163,11 +163,6 @@ export default function CoachDashboard() {
         eyebrow="Overview"
         title="Coach Dashboard"
         description="Your roster, and how the whole squad is trending."
-        actions={
-          <Link to="/session" className="btn btn-primary">
-            <Zap aria-hidden="true" className="h-4 w-4" /> Start a session
-          </Link>
-        }
       />
 
       {loadError && (
@@ -252,7 +247,22 @@ export default function CoachDashboard() {
         )}
       </Panel>
 
-      {/* CHARTS */}
+      {/* CHARTS — while there is nothing to plot, two identically empty
+          rectangles say the same thing twice and fill half the screen doing
+          it. One line, and the action that fills them, is more use. */}
+      {attendanceData.length === 0 && shotTypeData.length === 0 ? (
+        <Panel title="Squad trends" description="Attendance and shot mix across the roster.">
+          <div className="flex flex-col items-center gap-3 py-10 text-center">
+            <p className="max-w-sm text-sm leading-relaxed text-muted-foreground">
+              Nothing to chart yet. Run a session with a player selected and their
+              attendance and shot mix build up here.
+            </p>
+            <Link to="/session" className="btn btn-primary btn-sm">
+              <Zap aria-hidden="true" className="h-4 w-4" /> Start a session
+            </Link>
+          </div>
+        </Panel>
+      ) : (
       <div className="grid gap-4 lg:grid-cols-2">
         <Panel title="Session attendance" description="Sessions recorded per player.">
           <div className="h-56">
@@ -294,7 +304,9 @@ export default function CoachDashboard() {
           </div>
         </Panel>
       </div>
+      )}
 
+      {trendData.length > 0 && (
       <Panel title="Team speed &amp; spin" description="Daily averages across the roster.">
         <div className="h-64">
           <ChartErrorBoundary>
@@ -316,6 +328,7 @@ export default function CoachDashboard() {
           </ChartErrorBoundary>
         </div>
       </Panel>
+      )}
 
       <PlayerDetailModal player={detailPlayer} onClose={() => setDetailPlayer(null)} onUpdated={loadAll} />
     </div>
