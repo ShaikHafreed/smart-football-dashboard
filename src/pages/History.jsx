@@ -10,6 +10,14 @@ import {
   HISTORY_RANGES,
   HISTORY_PAGE_SIZE,
 } from "../lib/analyticsQueries";
+import {
+  FIRST_PAGE,
+  currentCursor,
+  advance,
+  back,
+  toNewest,
+  pageRange,
+} from "../lib/historyPager";
 import PageHeader from "../components/common/PageHeader";
 import StateBlock from "../components/common/StateBlock";
 
@@ -22,17 +30,19 @@ export default function History() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
 
-  // Paging is a stack of cursors rather than an offset: cursors[n] is the row
-  // page n resumes after, and cursors[0] is null because page 1 starts at the
-  // top. Going back is popping the stack, so "previous" costs the same as
-  // "next" and neither one re-walks the rows before it.
-  const [cursors, setCursors] = useState([null]);
-  const [pageIndex, setPageIndex] = useState(0);
+  // Paging is a stack of cursors rather than an offset, so "previous" costs
+  // the same as "next" and neither re-walks the rows before it. The stack
+  // itself lives in lib/historyPager.js, as data, so it can be tested.
+  const [pager, setPager] = useState(FIRST_PAGE);
   const [nextCursor, setNextCursor] = useState(null);
   const [hasMore, setHasMore] = useState(false);
 
   // Arrives on its own; the rows never wait for it.
   const [totalCount, setTotalCount] = useState(null);
+
+  // Whether the realtime channel actually reached SUBSCRIBED, rather than
+  // whether we asked it to. Nothing is claimed to be live that isn't.
+  const [subscribed, setSubscribed] = useState(false);
 
   const [playerFilter, setPlayerFilter] = useState("");
   const [rangeId, setRangeId] = useState("all");
@@ -47,7 +57,7 @@ export default function History() {
     [playerFilter, appliedSearch, rangeId]
   );
 
-  const cursor = cursors[pageIndex] ?? null;
+  const cursor = currentCursor(pager);
 
   const loadPage = useCallback(async (at, activeFilters) => {
     setLoading(true);
@@ -79,8 +89,7 @@ export default function History() {
   // than in an effect watching it, so there is no render that briefly pairs
   // the new filter with the old page.
   const resetPaging = useCallback(() => {
-    setCursors([null]);
-    setPageIndex(0);
+    setPager(FIRST_PAGE);
     setTotalCount(null);
   }, []);
 
@@ -113,7 +122,7 @@ export default function History() {
   // refresh — but only while looking at the first page with no filters, so a
   // live insert doesn't reshuffle a coach's filtered view out from under them.
   useEffect(() => {
-    if (pageIndex !== 0 || playerFilter || appliedSearch) return;
+    if (pager.index !== 0 || playerFilter || appliedSearch) return;
 
     let pending = null;
 
@@ -132,24 +141,23 @@ export default function History() {
           }, REALTIME_COALESCE_MS);
         }
       )
-      .subscribe();
+      .subscribe((status) => setSubscribed(status === "SUBSCRIBED"));
 
     return () => {
       if (pending) clearTimeout(pending);
       supabase.removeChannel(channel);
     };
-  }, [pageIndex, playerFilter, appliedSearch, filters, loadPage]);
-
-  const goNext = () => {
-    if (!nextCursor) return;
-    setCursors((prev) => [...prev.slice(0, pageIndex + 1), nextCursor]);
-    setPageIndex((i) => i + 1);
-  };
+  }, [pager.index, playerFilter, appliedSearch, filters, loadPage]);
 
   const filtered = Boolean(appliedSearch || playerFilter || filters.since);
-  const firstOnPage = pageIndex * PAGE_SIZE + 1;
-  const lastOnPage = pageIndex * PAGE_SIZE + data.length;
-  const showPager = pageIndex > 0 || hasMore;
+  // The live refresh only runs on the newest page with no player or search
+  // filter, so the badge is shown exactly when that is true AND the channel
+  // is genuinely connected. A stale `subscribed` cannot make it lie, because
+  // eligibility is re-derived every render.
+  const liveEligible = pager.index === 0 && !playerFilter && !appliedSearch;
+  const showLive = liveEligible && subscribed;
+  const { first: firstOnPage, last: lastOnPage } = pageRange(pager, PAGE_SIZE, data.length);
+  const showPager = pager.index > 0 || hasMore;
 
   return (
     <div className="space-y-6 animate-fadeIn">
@@ -212,7 +220,9 @@ export default function History() {
       </div>
 
       {/* WHAT YOU ARE LOOKING AT — the count fills in when it arrives, and
-          until then the rows are still fully usable. */}
+          until then the rows are still fully usable. The live badge says the
+          page updates itself, which nothing on screen used to mention. */}
+      <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
       <p aria-live="polite" className="text-xs text-muted-foreground">
         {data.length > 0 ? (
           <>
@@ -225,6 +235,17 @@ export default function History() {
           </>
         ) : null}
       </p>
+
+      {showLive && (
+        <span
+          className="inline-flex items-center gap-1.5 text-xs text-muted-foreground"
+          title="New kicks appear here automatically while this page is open."
+        >
+          <span aria-hidden="true" className="h-1.5 w-1.5 rounded-full bg-primary motion-safe:animate-pulse" />
+          Live
+        </span>
+      )}
+      </div>
 
       {loading && <StateBlock variant="loading" />}
 
@@ -281,26 +302,26 @@ export default function History() {
           the total, so it works before the count has arrived. */}
       {showPager && (
         <nav aria-label="Shot history pages" className="flex flex-wrap items-center justify-between gap-3 pt-2">
-          <span className="text-xs text-muted-foreground">Page {pageIndex + 1}</span>
+          <span className="text-xs text-muted-foreground">Page {pager.index + 1}</span>
 
           <div className="flex gap-2">
             <button
-              onClick={() => setPageIndex(0)}
-              disabled={pageIndex === 0}
+              onClick={() => setPager(toNewest)}
+              disabled={pager.index === 0}
               className="btn btn-quiet btn-sm"
             >
               <ChevronsLeft aria-hidden="true" className="h-4 w-4" />
               <span className="sr-only sm:not-sr-only">Newest</span>
             </button>
             <button
-              onClick={() => setPageIndex((p) => Math.max(0, p - 1))}
-              disabled={pageIndex === 0}
+              onClick={() => setPager(back)}
+              disabled={pager.index === 0}
               className="btn btn-quiet btn-sm"
             >
               <ChevronLeft aria-hidden="true" className="h-4 w-4" /> Prev
             </button>
             <button
-              onClick={goNext}
+              onClick={() => setPager((p) => advance(p, nextCursor))}
               disabled={!hasMore}
               className="btn btn-quiet btn-sm"
             >

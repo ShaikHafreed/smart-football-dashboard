@@ -80,7 +80,11 @@ Earlier versions pointed the ESP32 at the Flask relay's local IP address, which 
 - **GitHub** — source control and CI trigger for Vercel deploys
 
 ### Tooling
+- **Vitest** — unit tests (`npm test`)
 - **ESLint** — linting (`eslint.config.js`)
+- **`tools/benchmark/`** — runs the real migrations against a disposable
+  Postgres container and measures the app's own queries at 300k and ~1M
+  synthetic shots. Never point it at production.
 - **Arduino IDE** — firmware development and flashing
 - **Git / GitHub** — version control
 
@@ -177,12 +181,31 @@ Requires a Google OAuth Client ID/Secret enabled under **Authentication → Prov
 
 ## Database
 
-Four tables in Supabase Postgres, each with Row Level Security scoping every row to its owning account:
+Seven tables in Supabase Postgres, each with Row Level Security scoping every row to its owning account:
 
 - `football_profiles` — one row per user (name, DOB, avatar, role)
 - `football_players` — a coach's roster (or a player's own self-record)
 - `football_sessions` — start/end time per training session
 - `football_shots` — one row per detected kick (`speed`, `spin`, `force`, `distance`, shot type — see [Measurements](#measurements-and-calibration) for what each field actually carries)
+- `football_devices` — a claimed ball, its hashed token and which account holds it
+- `football_organizations` / `football_org_members` — a shared roster across several coaches
+
+Aggregation happens in Postgres rather than in the browser, through
+`security_invoker` views and functions (`football_leaderboard`,
+`football_player_shot_stats`, `football_player_session_stats`,
+`football_shot_daily_totals`, `football_shot_type_totals`) — the caller's own
+RLS still applies before anything is aggregated.
+
+### Migrations
+
+`supabase/migrations/` applies in filename order. Every migration in there has
+been applied to production **except one**:
+
+- `20260919150000_shots_created_at_index.sql` — indexes `football_shots(created_at desc)`.
+  The shot-history pager seeks through this index; without it the same page is
+  correct but reads every visible row to return 25. Production holds no shots
+  yet, so there is nothing to slow down today. **Apply it before real history
+  accumulates.** The file explains the measurements behind it.
 
 ## Measurements and calibration
 
