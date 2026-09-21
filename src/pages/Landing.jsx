@@ -1,4 +1,4 @@
-import { useEffect } from "react";
+import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 import { useReducedMotion } from "framer-motion";
 import {
@@ -32,12 +32,21 @@ import { prefetchRoute, onIdle } from "../lib/routes";
  * product capability — no predictions, no scores, no "AI coaching".
  */
 
+/**
+ * The page reads as a journey rather than a stack of feature sections, so the
+ * sections are numbered chapters and both the nav and the orientation rail are
+ * generated from this one list. The numbering cannot drift from the order of
+ * the page because there is only one order.
+ */
 const SECTIONS = [
-  { href: "#how", label: "How it works" },
-  { href: "#players", label: "For players" },
-  { href: "#coaches", label: "For coaches" },
-  { href: "#technology", label: "Technology" },
+  { id: "how", label: "How it works" },
+  { id: "live", label: "In session" },
+  { id: "players", label: "For players" },
+  { id: "coaches", label: "For coaches" },
+  { id: "technology", label: "Technology" },
 ];
+
+const chapterNumber = (id) => String(SECTIONS.findIndex((s) => s.id === id) + 1).padStart(2, "0");
 
 // Only what the sensor can defend. Spin and impact are physical units read
 // straight off the gyroscope and accelerometer; speed and carry stay indices
@@ -212,13 +221,102 @@ function Reveal({ children, delay = 0, reduceMotion, className = "" }) {
   );
 }
 
-function SectionHeading({ eyebrow, title, lead, id }) {
+/** The chapter mark: number, rule, name. Reads as a place in a sequence
+ *  rather than a label on a box. */
+function ChapterMark({ chapter, label }) {
+  return (
+    <p className="flex items-center gap-3 text-[11px] font-semibold uppercase tracking-[0.18em] text-muted-foreground">
+      <span className="font-data text-primary">{chapter}</span>
+      <span aria-hidden="true" className="h-px w-8 bg-border" />
+      <span>{label}</span>
+    </p>
+  );
+}
+
+function SectionHeading({ eyebrow, title, lead, id, chapter }) {
   return (
     <div className="max-w-2xl">
-      <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-muted-foreground">{eyebrow}</p>
+      {chapter
+        ? <ChapterMark chapter={chapter} label={eyebrow} />
+        : <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-muted-foreground">{eyebrow}</p>}
       <h2 id={id} className="font-display mt-3 text-3xl font-semibold tracking-tight sm:text-4xl">{title}</h2>
       {lead && <p className="mt-4 text-base leading-relaxed text-muted-foreground">{lead}</p>}
     </div>
+  );
+}
+
+/**
+ * A persistent sense of place.
+ *
+ * The page is a sequence, and a long one on a phone, but nothing on screen
+ * said where in it you were. This marks the chapter you are reading and lets
+ * you jump between them.
+ *
+ * IntersectionObserver rather than a scroll listener: it reports what is
+ * actually on screen without running code on every scroll frame, and it costs
+ * nothing extra in the bundle. Desktop only -- on a phone the same rail would
+ * take width away from the content it describes, and the section headings are
+ * already numbered.
+ */
+function ChapterRail({ sections }) {
+  const [active, setActive] = useState(null);
+
+  useEffect(() => {
+    const seen = new Map();
+    const observer = new IntersectionObserver(
+      (entries) => {
+        for (const entry of entries) seen.set(entry.target.id, entry.intersectionRatio);
+        // The most-visible section wins, so a short one scrolling past a tall
+        // one does not steal the mark.
+        let best = null;
+        let bestRatio = 0;
+        for (const [id, ratio] of seen) {
+          if (ratio > bestRatio) { best = id; bestRatio = ratio; }
+        }
+        setActive(bestRatio > 0.08 ? best : null);
+      },
+      { threshold: [0, 0.08, 0.25, 0.5, 0.75, 1] }
+    );
+
+    for (const s of sections) {
+      const el = document.getElementById(s.id);
+      if (el) observer.observe(el);
+    }
+    return () => observer.disconnect();
+  }, [sections]);
+
+  return (
+    <nav
+      aria-label="Chapters"
+      className="pointer-events-none fixed right-6 top-1/2 z-30 hidden -translate-y-1/2 xl:block"
+    >
+      <ol className="pointer-events-auto flex flex-col gap-1">
+        {sections.map((s, i) => {
+          const isActive = active === s.id;
+          return (
+            <li key={s.id}>
+              <a
+                href={`#${s.id}`}
+                aria-current={isActive ? "true" : undefined}
+                className="group flex items-center justify-end gap-3 py-1.5 text-right"
+              >
+                <span
+                  className={`font-data text-[11px] tracking-widest transition-colors
+                    ${isActive ? "text-foreground" : "text-muted-foreground/60 group-hover:text-muted-foreground"}`}
+                >
+                  {String(i + 1).padStart(2, "0")}
+                </span>
+                <span
+                  aria-hidden="true"
+                  className={`h-px transition-all ${isActive ? "w-8 bg-primary" : "w-4 bg-border group-hover:w-6"}`}
+                />
+                <span className="sr-only">{s.label}</span>
+              </a>
+            </li>
+          );
+        })}
+      </ol>
+    </nav>
   );
 }
 
@@ -257,8 +355,8 @@ export default function Landing() {
 
           <ul className="ml-4 hidden items-center gap-7 md:flex">
             {SECTIONS.map((s) => (
-              <li key={s.href}>
-                <a href={s.href} className="text-sm text-muted-foreground transition-colors hover:text-foreground">
+              <li key={s.id}>
+                <a href={`#${s.id}`} className="text-sm text-muted-foreground transition-colors hover:text-foreground">
                   {s.label}
                 </a>
               </li>
@@ -283,6 +381,8 @@ export default function Landing() {
           </div>
         </nav>
       </header>
+
+      <ChapterRail sections={SECTIONS} />
 
       <main id="main">
         {/* ================= HERO ================= */}
@@ -374,6 +474,7 @@ export default function Landing() {
             <Reveal reduceMotion={reduceMotion}>
               <SectionHeading
                 id="how-title"
+                chapter={chapterNumber("how")}
                 eyebrow="How it works"
                 title="From the boot to the dashboard"
                 lead="Four steps, and only the first one happens on the pitch."
@@ -401,11 +502,11 @@ export default function Landing() {
         </section>
 
         {/* ================= LIVE SESSION (pitch band) ================= */}
-        <section aria-labelledby="live-title" className="landing-pitch turf-texture py-20 sm:py-28">
+        <section id="live" aria-labelledby="live-title" className="landing-pitch turf-texture scroll-mt-20 py-20 sm:py-28">
           <div className="mx-auto grid max-w-6xl gap-12 px-5 sm:px-8 lg:grid-cols-12 lg:items-center">
             <div className="lg:col-span-6">
               <Reveal reduceMotion={reduceMotion}>
-                <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-muted-foreground">Live session</p>
+                <ChapterMark chapter={chapterNumber("live")} label="In session" />
                 <h2 id="live-title" className="font-display mt-3 text-3xl font-semibold tracking-tight sm:text-4xl">
                   The dashboard keeps up with the session
                 </h2>
@@ -485,6 +586,7 @@ export default function Landing() {
               <Reveal reduceMotion={reduceMotion}>
                 <SectionHeading
                   id="players-title"
+                  chapter={chapterNumber("players")}
                   eyebrow="For players"
                   title="Know whether you are actually improving"
                   lead="Not a feeling at the end of a session — the same measurements, taken the same way, every time you train."
@@ -517,6 +619,7 @@ export default function Landing() {
               <Reveal reduceMotion={reduceMotion}>
                 <SectionHeading
                   id="coaches-title"
+                  chapter={chapterNumber("coaches")}
                   eyebrow="For coaches"
                   title="See the squad, not just the session"
                   lead="One roster, every player's record behind it, and the team's direction of travel in front of it."
@@ -548,6 +651,7 @@ export default function Landing() {
             <Reveal reduceMotion={reduceMotion}>
               <SectionHeading
                 id="tech-title"
+                chapter={chapterNumber("technology")}
                 eyebrow="Technology"
                 title="What it is built from"
                 lead="A ball that can be trusted to report its own kicks, and a backend that can be trusted to file them against the right player."
